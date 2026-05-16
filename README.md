@@ -1,8 +1,8 @@
-# Acciones ElBosque
+# BloomTrade
 
 **Plataforma de Day Trading | Ingeniería de Software 2 | Universidad El Bosque | 2026**
 
-Sistema web que permite operar acciones en cinco mercados internacionales (NYSE, NASDAQ, LSE, TSE, ASX) con autenticación multifactor, gestión de portafolio, comisionistas asignados y trazabilidad completa de operaciones. Diseñado bajo arquitectura orientada a servicios con tácticas de Bass para rendimiento, disponibilidad, seguridad, modificabilidad e interoperabilidad.
+Sistema web que permite operar acciones en cinco mercados internacionales (NYSE, NASDAQ, LSE, TSE, ASX) con autenticación multifactor, gestión de portafolio, comisionistas asignados y trazabilidad completa de operaciones. Diseñado como **monolito modular** con tácticas de Bass para rendimiento, disponibilidad, seguridad, modificabilidad e interoperabilidad (ver `ARCHITECTURE.md` §2).
 
 > **Estado:** En desarrollo activo del MVP. No apto para uso productivo.
 
@@ -52,8 +52,8 @@ Este `README.md` cubre únicamente **cómo levantar el proyecto en local**.
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/<org-o-usuario>/acciones-elbosque.git
-cd acciones-elbosque
+git clone https://github.com/gonimajuan/BloomTrade.git
+cd BloomTrade
 ```
 
 ### 2. Configurar variables de entorno
@@ -104,9 +104,10 @@ Todos deben aparecer en estado `running` o `healthy`. Si alguno está en `unheal
 # Levantar solo bases de datos, caché, ELK, MailHog
 docker compose up -d postgres redis elasticsearch logstash kibana mailhog
 
-# En una terminal: backend con hot reload
+# En una terminal: backend con hot reload (requiere Maven 3.9+ instalado en PATH,
+# o abrir el proyecto en IntelliJ y usar el Maven embebido del IDE)
 cd backend
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
 
 # En otra terminal: frontend con HMR
 cd frontend
@@ -129,7 +130,7 @@ Una vez levantado el stack completo, los servicios quedan accesibles en:
 | Actuator Health | http://localhost:8080/actuator/health | Estado del backend |
 | Kibana | http://localhost:5601 | Búsqueda y exploración de logs de auditoría |
 | MailHog UI | http://localhost:8025 | Inbox de correos enviados (códigos MFA, confirmaciones) |
-| PostgreSQL | localhost:5432 | Conexión directa con cliente SQL si se necesita |
+| PostgreSQL | localhost:**5433** | Conexión directa con cliente SQL (el puerto host está remapeado de 5432→5433 para evitar choque con Postgres nativo) |
 | Redis | localhost:6379 | Conexión directa con `redis-cli` si se necesita |
 
 ---
@@ -168,8 +169,8 @@ El sistema integra cuatro servicios externos. Para correr el MVP localmente se n
 2. Confirmar que estás en **Test mode** (toggle arriba a la derecha)
 3. En **Developers > API keys**, copiar la Secret Key (`sk_test_...`)
 4. Crear dos productos en **Products**:
-   - `Acciones ElBosque Premium - Mensual` con precio recurrente USD $12/mes
-   - `Acciones ElBosque Premium - Anual` con precio recurrente USD $120/año
+   - `BloomTrade Premium - Mensual` con precio recurrente USD $12/mes
+   - `BloomTrade Premium - Anual` con precio recurrente USD $120/año
 5. Copiar los IDs de cada Price (`price_...`)
 6. Para webhooks locales, instalar [Stripe CLI](https://stripe.com/docs/stripe-cli) y ejecutar:
    ```bash
@@ -241,24 +242,22 @@ docker stats
 
 ### Backend
 
+> Requiere Maven 3.9+ en el PATH. Maven Wrapper (`./mvnw`) **no está incluido** todavía
+> — se evaluará agregarlo si algún colaborador necesita arrancar sin Maven instalado.
+
 ```bash
 cd backend
 
-# Construir y testear
-./mvnw clean verify
+# Construir y testear (también genera el reporte Jacoco en verify)
+mvn clean verify
 
 # Solo tests unitarios
-./mvnw test
+mvn test
 
-# Tests de integración (requiere Docker corriendo para Testcontainers)
-./mvnw verify -Pintegration
+# Reporte de cobertura ya está en target/site/jacoco/index.html después de verify
 
-# Generar reporte de cobertura
-./mvnw verify jacoco:report
-# Abrir target/site/jacoco/index.html
-
-# Análisis local con SonarCloud (requiere token)
-./mvnw verify sonar:sonar -Dsonar.token=<tu-token>
+# Análisis local con SonarCloud (requiere token + sonar-project.properties configurado)
+mvn verify sonar:sonar -Dsonar.token=<tu-token>
 ```
 
 ### Frontend
@@ -284,25 +283,28 @@ npm run preview
 # Generar tipos TS desde OpenAPI (requiere backend corriendo)
 npm run gen:api
 
-# Lint y formato
+# Lint (type-check con tsc --noEmit)
 npm run lint
-npm run format
 ```
 
 ### Base de datos
 
 ```bash
 # Conectarse con psql desde dentro del contenedor
-docker compose exec postgres psql -U postgres -d acciones
+docker compose exec postgres psql -U bloomtrade -d bloomtrade
 
-# Ver migraciones aplicadas
-docker compose exec postgres psql -U postgres -d acciones -c "SELECT * FROM flyway_schema_history;"
+# Conectarse desde el host (puerto remapeado a 5433)
+psql -h localhost -p 5433 -U bloomtrade -d bloomtrade
+
+# Ver migraciones aplicadas (flyway_schema_history vive en el schema 'app')
+docker compose exec postgres psql -U bloomtrade -d bloomtrade -c "SELECT * FROM app.flyway_schema_history;"
 
 # Backup rápido
-docker compose exec postgres pg_dump -U postgres acciones > backup.sql
+docker compose exec postgres pg_dump -U bloomtrade bloomtrade > backup.sql
 
 # Reset total de la BD (⚠️ borra todos los datos)
-docker compose down -v postgres
+docker compose stop postgres
+docker volume rm bloomtrade-postgres-data
 docker compose up -d postgres
 ```
 
@@ -338,11 +340,11 @@ Para búsquedas más usables, usar Kibana en http://localhost:5601 (Discover vie
 ### Suite completa antes de PR
 
 ```bash
-# Backend: build, lint, tests, coverage
-cd backend && ./mvnw clean verify
+# Backend: build, tests, coverage
+cd backend && mvn clean verify
 
-# Frontend: lint, tests, build
-cd frontend && npm run lint && npm test && npm run build
+# Frontend: lint + build (los tests se agregan cuando exista código con tests reales)
+cd frontend && npm run lint && npm run build
 ```
 
 Esto es exactamente lo que corre en CI. Si pasa local, debe pasar en CI.
@@ -407,20 +409,7 @@ Verificar que `stripe listen` está corriendo en otra terminal y que el `STRIPE_
 
 ### MailHog no muestra correos
 
-Verificar config de Spring en `application-dev.yml`:
-```yaml
-spring:
-  mail:
-    host: mailhog
-    port: 1025
-    properties:
-      mail:
-        smtp:
-          auth: false
-          starttls.enable: false
-```
-
-El backend habla con `mailhog` (el nombre del servicio en Docker), no con `localhost`.
+> Aplica cuando se implemente envío de email (HU-F03, MFA por correo). Hasta entonces el backend no envía emails — solo está MailHog escuchando en `:8025`.
 
 ### Tests de integración fallan con "could not connect to Testcontainers"
 
@@ -428,12 +417,7 @@ Asegurar que Docker está corriendo localmente. Testcontainers levanta sus propi
 
 ### Frontend no se conecta al backend (CORS)
 
-Confirmar que `application-dev.yml` tiene CORS habilitado para `http://localhost:5173`:
-```yaml
-acciones:
-  cors:
-    allowed-origins: http://localhost:5173
-```
+> Aplica cuando el frontend empiece a llamar al backend (HU-F01 en adelante). La configuración de CORS se agrega en `SecurityConfig.java` en ese momento — actualmente el `SecurityConfig` es skeleton.
 
 ---
 
@@ -459,14 +443,16 @@ docker system prune -a --volumes
 Resumen para orientación. La descripción detallada está en [`CONVENTIONS.md`](./CONVENTIONS.md) §1.
 
 ```
-acciones-elbosque/
+BloomTrade/
 ├── *.md                    ← Documentación maestra del proyecto
-├── docker-compose.yml      ← Stack completo
+├── docker-compose.yml      ← Stack completo (8 servicios)
 ├── .env.example            ← Template de variables (copiar a .env)
+├── sonar-project.properties ← Config de SonarCloud
 ├── backend/                ← Spring Boot 3 + Java 21
 ├── frontend/               ← React 18 + TypeScript + Vite
 ├── specs/                  ← Specs SDD por feature (HU)
 ├── load-tests/             ← Planes JMeter
+├── logstash/               ← Config + pipeline de Logstash
 ├── docs/                   ← Diagramas C4, secuencia, despliegue, prompts
 └── .github/workflows/      ← Pipelines CI/CD
 ```
