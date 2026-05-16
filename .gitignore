@@ -1,0 +1,114 @@
+# BloomTrade — .gitignore
+# Cobertura: Java/Maven backend, Vite/React/TS frontend, IDEs, OS, secretos, logs.
+
+# ─── Variables de entorno (secretos) ───────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# ─── Java / Maven (backend/) ───────────────────────────────────────────────────
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+.mvn/wrapper/maven-wrapper.jar
+
+# Spring Boot
+spring-shell.log
+
+# ─── Node / Vite / React (frontend/) ───────────────────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+.vite/
+build/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+.eslintcache
+
+# Vite local cache
+.vite-temp/
+
+# npm / yarn / pnpm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ─── Testing / Coverage ────────────────────────────────────────────────────────
+**/target/site/jacoco/
+**/target/surefire-reports/
+**/target/failsafe-reports/
+.scannerwork/
+
+# ─── IDEs ──────────────────────────────────────────────────────────────────────
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Eclipse / STS
+.project
+.classpath
+.settings/
+.factorypath
+.springBeans
+.apt_generated/
+
+# NetBeans
+nbproject/private/
+nbbuild/
+nbdist/
+.nb-gradle/
+
+# ─── Sistemas operativos ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ─── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+backend/logs/
+frontend/logs/
+
+# ─── Docker / runtime ──────────────────────────────────────────────────────────
+# Volúmenes locales si se montan en el repo (no debería pasar, pero por si acaso)
+docker-data/
+.docker/
+docker-compose.override.yml
+
+# ─── Editores / temporales ─────────────────────────────────────────────────────
+*.swp
+*.swo
+*~
+.history/
+
+# ─── Específico del proyecto ───────────────────────────────────────────────────
+# Resultados de JMeter (los planes .jmx sí se trackean; los reportes no)
+load-tests/results/
+load-tests/*.jtl
+
+# Bitácora de prompts: los .md sí; cualquier export temporal no
+docs/prompts/_drafts/
+
+# ─── Claude Code (local del developer, no es del proyecto) ─────────────────────
+.claude/
+.agents/
+skills-lock.json

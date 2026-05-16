@@ -1,0 +1,20 @@
+# BloomTrade — Perfil test
+# Testcontainers provee Postgres por test. URL JDBC mágica de Testcontainers:
+# 'jdbc:tc:postgresql:...' arranca un contenedor automáticamente al primer connect.
+
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:16-alpine:///bloomtrade_test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  flyway:
+    enabled: true
+    clean-disabled: false
+
+logging:
+  level:
+    co.edu.unbosque.bloomtrade: DEBUG
+    org.testcontainers: INFO

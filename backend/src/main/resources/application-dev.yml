@@ -1,0 +1,35 @@
+# BloomTrade — Perfil dev (backend corre fuera de Docker contra infra de docker-compose)
+#
+# Notas de conexión:
+# - Postgres host port: 5433 (remapeo configurado en docker-compose.yml para no chocar
+#   con Postgres nativo en 5432).
+# - Redis y Logstash quedan en sus puertos por defecto.
+# - Cuando el backend corra DENTRO de Docker (T08), un application.yml de docker
+#   o variables de entorno sobrescribirán estas URLs con nombres de servicio internos.
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/${POSTGRES_DB:bloomtrade}
+    username: ${POSTGRES_USER:bloomtrade}
+    password: ${POSTGRES_PASSWORD:changeme}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+logging:
+  level:
+    co.edu.unbosque.bloomtrade: DEBUG
+    org.springframework.security: INFO
+    org.flywaydb: INFO
+    org.hibernate.SQL: INFO

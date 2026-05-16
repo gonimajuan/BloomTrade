@@ -1,0 +1,45 @@
+# BloomTrade — Configuración común
+# Perfiles específicos en application-dev.yml / application-test.yml.
+
+spring:
+  application:
+    name: bloomtrade
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  jpa:
+    open-in-view: false   # CONVENTIONS: evita lazy-loading fuera de transacción
+    hibernate:
+      ddl-auto: validate  # Schema es manejado por Flyway, JPA solo valida
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    schemas: app          # Flyway crea 'app' y aloja flyway_schema_history aquí
+    default-schema: app
+
+server:
+  port: 8080
+  error:
+    include-message: always
+    include-binding-errors: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha

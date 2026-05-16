@@ -80,7 +80,7 @@ El sistema está compuesto por **9 módulos autónomos**, cada uno implementado 
 
 | Módulo | Responsabilidad | Paquete Java |
 |---|---|---|
-| AuthService | Autenticación MFA, gestión de sesiones, bloqueo por intentos fallidos | `co.edu.elbosque.bloomtrade.auth` |
+| AuthService | Autenticación MFA, gestión de sesiones, bloqueo por intentos fallidos | `co.edu.unbosque.bloomtrade.auth` |
 | TradingService | Recepción, priorización, ejecución y orquestación de órdenes | `...trading` |
 | PortfolioService | Gestión de posiciones, saldo y historial del inversionista | `...portfolio` |
 | NotificationService | Despacho multicanal de notificaciones (SMS, Email, WhatsApp) | `...notification` |

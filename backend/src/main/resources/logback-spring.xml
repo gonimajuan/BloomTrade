@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  BloomTrade — Configuración de logging
+  - Console JSON: salida estructurada en stdout (legible por Docker, Kibana, etc.).
+  - Logstash TCP: ingesta directa al pipeline ELK definido en logstash/pipeline/logstash.conf.
+
+  Defaults:
+  - LOGSTASH_HOST: 'localhost' cuando el backend corre fuera de Docker (Sesión B).
+  - LOGSTASH_PORT: 5044 (input TCP del pipeline).
+  Sobreescribibles vía variables de entorno (T08 fija LOGSTASH_HOST=logstash dentro de compose).
+-->
+<configuration>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <property name="LOGSTASH_HOST" value="${LOGSTASH_HOST:-localhost}"/>
+    <property name="LOGSTASH_PORT" value="${LOGSTASH_PORT:-5044}"/>
+
+    <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"service":"bloomtrade-backend"}</customFields>
+        </encoder>
+    </appender>
+
+    <springProfile name="dev,prod">
+        <appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+            <destination>${LOGSTASH_HOST}:${LOGSTASH_PORT}</destination>
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <customFields>{"service":"bloomtrade-backend"}</customFields>
+            </encoder>
+            <keepAliveDuration>5 minutes</keepAliveDuration>
+            <reconnectionDelay>10 seconds</reconnectionDelay>
+        </appender>
+    </springProfile>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE_JSON"/>
+        <springProfile name="dev,prod">
+            <appender-ref ref="LOGSTASH"/>
+        </springProfile>
+    </root>
+
+    <logger name="co.edu.unbosque.bloomtrade" level="DEBUG"/>
+    <logger name="org.springframework.security" level="INFO"/>
+</configuration>
