@@ -18,6 +18,15 @@ spring:
     locations: classpath:db/migration
     schemas: app          # Flyway crea 'app' y aloja flyway_schema_history aquí
     default-schema: app
+  mail:                   # HU-F01: SMTP a MailHog (sin auth/TLS). Override en docker-compose.
+    host: ${SPRING_MAIL_HOST:localhost}
+    port: ${SPRING_MAIL_PORT:1025}
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
 
 server:
   port: 8080
