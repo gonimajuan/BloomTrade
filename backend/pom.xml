@@ -57,6 +57,16 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
+        <!-- ─── Email: SMTP + plantillas (STACK.md §2.2 — HU-F01) ──────────────── -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+        </dependency>
+
         <!-- ─── Drivers y persistencia (STACK.md §2.3) ────────────────────────── -->
         <dependency>
             <groupId>org.postgresql</groupId>
