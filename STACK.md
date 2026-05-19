@@ -59,6 +59,8 @@ Razones de la elección sobre las otras opciones permitidas (Python, Go, .NET):
 | `spring-boot-starter-validation` | Bean Validation (`@Valid`, `@NotNull`, etc.) | Validación de DTOs |
 | `spring-boot-starter-actuator` | Health checks, metrics | Endpoints para `MonitoringService` y heartbeat |
 | `spring-boot-starter-data-redis` | Cliente Redis | Para `PriceCache` y revocación JWT |
+| `spring-boot-starter-mail` | Envío SMTP (email de bienvenida, MFA) | Hacia MailHog en dev (`spring.mail.host=mailhog`) |
+| `spring-boot-starter-thymeleaf` | Render de plantillas de email HTML | Plantillas en `resources/templates/email/` |
 | `spring-boot-starter-test` | JUnit 5 + Mockito + AssertJ | Stack de tests por defecto |
 
 ### 2.3 Librerías adicionales aprobadas
@@ -129,6 +131,7 @@ Cada paquete de servicio (`auth/`, `trading/`, etc.) sigue internamente la estru
 | `@tanstack/react-query` | 5.x | Cache de datos del servidor + polling del dashboard |
 | `axios` | 1.x | Cliente HTTP (sobre fetch por interceptors) |
 | `react-hook-form` + `zod` | 7.x / 3.x | Formularios + validación tipada |
+| `@hookform/resolvers` | 3.x | Adaptador zod ↔ react-hook-form |
 | `tailwindcss` | 3.x | Estilos utility-first |
 | `shadcn/ui` | latest | Componentes accesibles sobre Radix + Tailwind |
 | `recharts` | 2.x | Gráficos para Dashboard de acciones |
@@ -489,3 +492,4 @@ Este archivo se actualiza vía PR como cualquier código. Cada cambio significat
 | Fecha | Cambio | Razón |
 |---|---|---|
 | 2026-05-07 | Versión inicial | Cierre de fase de diseño, inicio de implementación SDD |
+| 2026-05-19 | §2.2: + `spring-boot-starter-mail`, `spring-boot-starter-thymeleaf`. §3.2: + `@hookform/resolvers`. | Requeridas por HU-F01: email de bienvenida vía MailHog con plantilla Thymeleaf, y resolver zod en el formulario de registro. Aprobadas por el humano. refs specs/HU-F01-registrarse/SPEC.md |
