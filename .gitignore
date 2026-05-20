@@ -36,6 +36,10 @@ coverage/
 # Vite local cache
 .vite-temp/
 
+# Emit de `tsc -b` para vite.config.ts (project references emiten .js/.d.ts al lado del .ts).
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
 # npm / yarn / pnpm
 npm-debug.log*
 yarn-debug.log*
