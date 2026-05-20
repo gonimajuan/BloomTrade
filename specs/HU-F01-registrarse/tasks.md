@@ -71,5 +71,6 @@ Leyenda: ☐ pendiente · ◐ en progreso · ☑ hecho
 ## Lote G — Cierre
 
 - ☐ **T16.1** Verificación DoD spec §15 end-to-end: `docker compose up` → registro real en `/register` → fila `app.users` con `password_hash ~ ^\$2a\$12\$` → balance 10000.00 → evento `USER_REGISTERED` en Kibana → email en MailHog (`:8025`).
-- ☐ **T16.2** Actualizar `docs/prompts/sprint-1.md` (bitácora) y `APRENDIZAJES.md` (cierre Día 1, ver [[feedback-actualizar-aprendizajes]]).
+- ☑ **T16.2a** `APRENDIZAJES.md` actualizado con Día 1.
+- ✗ **T16.2b** Bitácora `docs/prompts/sprint-1.md` — **cancelada** por directiva del profesor (2026-05-19): los SPECs son la principal evidencia académica, la bitácora no es entregable prioritario. Ver CONVENTIONS §11.3 actualizado.
 - ☐ **T16.3** Abrir PR `feat/HU-F01-registrarse` con plantilla; checklist DoD; pipeline verde.  **← HITO 6 (entrega HU-F01)**
