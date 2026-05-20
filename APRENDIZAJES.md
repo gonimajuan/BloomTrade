@@ -135,6 +135,114 @@ Monta tu carpeta `frontend`, corre install dentro, deja el `package-lock.json` e
 
 ---
 
+## Día 2-3 — HU-F02 + HU-F03 Login + MFA (2026-05-20)
+
+### Sobre el tamaño del bundle y la decisión de recortar D18
+
+**El plan original tenía 9 lotes (A→I, con E diferido) para Día 2.** Llegando al planning honesto se veía claramente que no entraban en un día — eran ~2 días de trabajo entre backend + frontend + tests + IT. La opción de "implementar igual y derramar a Día 3" estaba sobre la mesa; la opción de **recortar alcance fue mejor**: la decisión D18 difirió `/refresh` y `/logout` a una mini-HU post-MVP. El access token de 15 min es UX subóptima (re-login cada 15 min) pero perfectamente suficiente para una demo MVP. **Recortar temprano siempre fue más barato que apurar al cierre** — me llevé ese aprendizaje del Día 1 (cuando Testcontainers me hizo perder horas) y lo apliqué deliberadamente.
+
+**Una HU "grande" en realidad eran dos.** HU-F02 (login) y HU-F03 (MFA) se planificaron juntas porque el flujo es uno solo, pero el código sale más limpio si pensás en dos sub-bundles: backend (Lotes A→F) y frontend (Lotes G→I). El backend cierra primero, el frontend lo consume. Por eso elegí terminar Lote F (tests backend) antes de tocar G; tener `mvn verify` verde le dio al frontend un blanco estable contra el cual probar.
+
+### Redis testing — mock vs real
+
+**Mockear `StringRedisTemplate` con Mockito + `ValueOperations`** funciona para tests unit de los trackers, pero te obliga a recordar dos cosas: (1) `redis.opsForValue()` necesita un `@Mock ValueOperations<String,String>` aparte, encadenado con `when(redis.opsForValue()).thenReturn(ops)`; (2) `redis.delete(String)` y `redis.delete(Collection<String>)` son métodos diferentes — si tu `TempSessionManager.invalidate()` usa la versión Collection y el test mockea la otra, Mockito no se queja y el verify pasa pero el código real explota.
+
+**Para los IT preferí Redis real del docker-compose en `localhost:6379`** (mismo pivot que HU-F01 con Postgres). Sin Testcontainers. El `@SpringBootTest` autoconfigura el `StringRedisTemplate` apuntando ahí, y el `@BeforeEach` hace `flushDb()` para aislamiento entre tests. **Es mucho más rápido validar el comportamiento real (leer el OTP de `otp:{tempSessionId}` directamente) que mockear cada paso.** La hipótesis se prueba contra el mismo Redis que veré corriendo en producción.
+
+**El IT que valida JWT real con un secret hardcoded en `application-test.yml`** no fue intuitivo al principio: pensé que iba a tener que mockear `JwtService`. No — el `JwtService` con su constructor `(secret, ttl)` se construye real, el filtro real lo valida, y el `AuthFlowIT` simplemente confirma que un token emitido en `/mfa/verify` parsea OK con `jwtService.validate(token)`. Si la firma o el formato fueran inválidos, el test rompe. Más simple, más realista, menos mocks.
+
+### jjwt 0.12.x — un sabor distinto
+
+**jjwt 0.12 cambió la API respecto de 0.11** (cuando hice un curso de Spring hace años, el patrón era `Jwts.builder().setSubject(...).signWith(...)`; hoy es `Jwts.builder().subject(...).signWith(key, Jwts.SIG.HS256)`). El "setX" desapareció en favor de los métodos fluidos sin prefijo. La cosa pasa desapercibida cuando seguís un tutorial, pero **el costo de no leer el changelog es escribir código que IDE-completa pero deja warnings de @Deprecated por todos lados**. Aprendido: en una HU de auth, leer las release notes de jjwt antes de codear ahorra refactor después.
+
+**HS256 requiere clave >= 256 bits (32 bytes).** `Keys.hmacShaKeyFor(secret.getBytes())` lo valida y tira `WeakKeyException` si el secret es chico. Mi `JwtService` lo chequea explícitamente en el constructor con un mensaje accionable. **El truco fue acordarme de poner el chequeo: confiar en que jjwt lance una excepción "linda" no garantiza un mensaje accionable** — la mía dice exactamente cómo generar uno con `openssl rand -base64 64`.
+
+### Spring Placeholder anidado — bug latente que solo se vio en `mvn verify`
+
+`@Value("${jwt.secret:${JWT_SECRET}}")` parece razonable: "leé `jwt.secret` del yaml, si no existe leé la env var `JWT_SECRET`". **La sorpresa**: el resolver de Spring evalúa los placeholders **inside-out**, no outer-first. Cuando ni `jwt.secret` ni la env var están definidas, intenta resolver `${JWT_SECRET}` primero, falla, y aborta toda la cadena sin probar el outer. El smoke test `BloomtradeApplicationTests.contextLoads` (que existía desde Día 0) detectó esto **solo cuando corrí `mvn verify` por primera vez en Lote F** — Lotes A→D solo hacían `mvn compile`, donde el ApplicationContext nunca se levanta.
+
+**El fix fue ridículo: cambiar `${JWT_SECRET}` a `${JWT_SECRET:}` (default vacío en el inner).** Pero el aprendizaje gordo no es la syntax: es **que `mvn compile` no es un proxy válido de "el código corre"**. Compilar prueba sintaxis Java + dependencias; el ApplicationContext de Spring se levanta recién en `@SpringBootTest`. **Si te confiaste en compile verde, el bug del placeholder vive 5 lotes hasta que algún test lo activa.** En mi caso fueron varios commits intermedios, pero ya estaba commiteado el bug; el fix se metió en el commit de Lote F como parte del scope honesto del lote.
+
+### Tests que tocan Spring context y el costo de excluir auto-configs
+
+**El `RegisterFlowIT` de HU-F01 excluía `RedisAutoConfiguration` explícitamente** (decisión D12 de ese plan: HU-F01 no usa Redis). Estaba bien en ese momento. Cuando entré a Lote F con `LoginAttemptTracker`, `TempSessionManager` y `MfaAttemptTracker` — todos `@Component` que inyectan `StringRedisTemplate` — el context de `RegisterFlowIT` ya no podía levantarse: Spring no encuentra el bean porque la auto-config está excluida. **Los tests de HU-F01 rompieron sin tocar HU-F01.**
+
+El instinto es "agregar `@MockBean StringRedisTemplate` al RegisterFlowIT", pero estás emparchando. **La mejor solución fue remover el exclude original** — Redis ahora es infraestructura del módulo `auth/`, no opcional de una HU. La spec de HU-F01 D12 sigue siendo correcta históricamente, pero esa decisión envejeció. **Las decisiones `Dxx` son históricas, no eternas.** Cuando una decisión vieja choca con una nueva, gana la nueva — y se documenta el porqué del cambio.
+
+### Frontend — Context, interceptor, y la separación correcta de responsabilidades
+
+**`AuthContext` puro de React + interceptor del apiClient que recibe los getters por inyección.** La tentación inicial fue meter el axios interceptor dentro del componente AuthProvider con `useEffect(() => { apiClient.interceptors.request.use(...)}, [])`. Eso instala el interceptor en el primer mount pero **no lo eject al unmount** → en tests, cada `render()` agrega un interceptor nuevo y se acumulan. Y si el `accessToken` cambia, el interceptor del primer render queda "stuck" sobre el token viejo.
+
+La solución limpia: **el interceptor vive como singleton del módulo apiClient, y el AuthProvider lo "configura" cada vez que cambia el token vía un `configureAuthInterceptor({getAccessToken, onUnauthorized})`.** El interceptor lee del closure que apunta a los getters más recientes. Una sola instalación, configuración mutable. **Es el patrón que después usás para cualquier cross-cutting concern: el módulo expone una función `configure`, los provider de React llaman esa función en useEffect con sus callbacks actuales.**
+
+**No persistir el access token en localStorage es una decisión deliberada.** El requisito vino de la spec (§12.3): un XSS no podría exfiltrar el token porque vive solo en memoria del provider. La contra es que un reload pierde la sesión → el usuario tiene que re-loguear cada vez que cierra la pestaña. **Hasta que llegue el refresh token (mini-HU post-MVP), esta es la mejor seguridad disponible.** El refresh cookie HttpOnly va a ser invisible al JS y permitir el reload con una llamada a `/refresh` transparente, pero eso es deuda registrada.
+
+### Docker compose, env vars, y el ciclo restart loop
+
+**El backend container hizo restart loop completamente silencioso hasta que vi `docker compose ps` mostrando "Restarting (1) 4s ago".** Lo que pasó: agregué el `JwtService` con `@Value("${JWT_SECRET}")` en Lote A, lo testeé localmente con env var seteada en el shell, pero **nunca actualicé el `environment:` del backend service en `docker-compose.yml`**. El bug latente quedó ahí desde Día 2; recién se manifestó cuando levanté el stack completo para HITO 5 (`docker compose up -d --build backend frontend`).
+
+**Lección dura: cada vez que el código backend introduce un nuevo `@Value("${VAR}")`, el compose `environment:` necesita actualizarse en el mismo PR.** Es como las migraciones Flyway — código de app y migración van juntos. Acá: env var de la app y env var del container van juntos. Mi `:?` syntax en el compose (`${JWT_SECRET:?...}`) ahora aborta el `up` con mensaje claro si la var está vacía, en lugar de dejar el container en restart loop silencioso.
+
+### El bug del nginx que viajó desde HU-F01 sin hacerse notar
+
+**Frontend en Vite dev (`npm run dev`) tiene su propio proxy en `vite.config.ts` que apunta a `localhost:8080`** — `/api/v1/auth/register` → `localhost:8080/api/v1/auth/register`. Funciona desde Día 1.
+
+**Frontend en docker (nginx sirviendo `dist/`) usa otra configuración en `nginx.conf`** y tenía `proxy_pass http://backend:8080/;` con `/` al final. **Ese `/` final hace que nginx strippee el prefijo del location** — el backend recibía `POST /v1/auth/register` (sin `/api`) → Spring Security rechazaba con 403 sin body → el frontend lo veía como NETWORK_ERROR.
+
+El bug existía desde HU-F01 (Día 0/1) pero **nunca se activó** porque el flujo de registro siempre se probó en Vite dev, no en el nginx del compose. **HITO 5 de HU-F02 fue la primera vez que ejecuté el flujo end-to-end con el frontend buildeado y servido por nginx**, y el bug emergió. Fix: quitar el `/` final. Una línea.
+
+**Aprendizaje meta:** los HITOs que dicen "E2E manual con todo levantado en docker" no son ceremonia. Son la única forma de descubrir bugs de integración como este — el dev local con hot reload nunca los activa. **Si la spec dice "verificable arrancando docker-compose up", hay que ejecutar exactamente ese flujo al menos una vez por HU.**
+
+### Tests frontend — setState durante render como herramienta legítima
+
+**Para testear `<ProtectedRoute>` con sesión activa**, el approach inicial fue:
+```tsx
+function PrimeSession({ children }) {
+  const { setSession } = useAuth();
+  useEffect(() => setSession(...), []);
+  return children;
+}
+```
+Pero `<ProtectedRoute>` evalúa el guard ANTES de que el useEffect corra, ve `isAuthenticated=false`, y redirige a `/login`. Test rojo.
+
+**La docs oficial de React menciona "setState during render protegido por flag" como patrón soportado:**
+```tsx
+if (!isAuthenticated) {
+  setSession(...);
+  return null;
+}
+return children;
+```
+Cuando el render se reejecuta tras el setState, `isAuthenticated` ya es true → no entra al if → renderea children. **No es un anti-pattern si está protegido por una condición que se vuelve falsa después del setState.** Lo había evitado por años por miedo al "loop infinito", pero acá es exactamente la herramienta correcta. Mejor que `useLayoutEffect` + flag manual.
+
+### MailHog no es Gmail (otra vez)
+
+Sé esto desde Día 0 pero igual lo olvidé en HITO 5: el primer login devolvió 200 con `tempSessionId`, abrí mi Gmail, no había mail, asumí que SMTP estaba roto. **El log del backend decía `"Email 'Tu código de acceso a BloomTrade' enviado a juangonimafornaguera@gmail.com"`** y `curl http://localhost:8025/api/v2/messages` devolvía `total:2`. **MailHog captura, no envía**. El mensaje estaba ahí, solo tenía que abrir `localhost:8025`. Lección obvia pero aún así costó 5 minutos diagnosticar.
+
+### Cadencia de los 9 lotes (sumando los fixes colaterales)
+
+| Lote | Trabajo | Hito |
+|---|---|---|
+| A | JWT + filter + handlers (backend) | mvn compile verde |
+| B | Notification refactor + templates | unit MailNotifier verde |
+| C | Login flow (backend) | mvn compile verde, 57 src |
+| D | MFA flow (backend) | mvn compile verde, 71 src |
+| E | ~Refresh + Logout~ | DIFERIDO D18 |
+| F | Tests backend + CI Redis | mvn verify verde, 90 tests |
+| G | Frontend infra (AuthContext + interceptor) | tsc/build verdes |
+| H | Frontend pages (Login + MFA + Dashboard) | **HITO 5 ✅ E2E manual** |
+| I | Tests frontend + APRENDIZAJES + PR | HITO 6 PR abierto |
+
+**Lo que funcionó bien**: dividir backend antes que frontend. Cada lote tenía un hito objetivo (compila / test verde / E2E manual) que servía de gate antes de avanzar. **Lo que no anticipé**: la cantidad de fixes colaterales (JwtService placeholder, RegisterFlowIT exclude, docker-compose JWT_SECRET, nginx trailing slash) que aparecieron al integrar todo. Los junté en los commits de los lotes donde se descubrieron, no como commits separados — más fácil de revisar porque el contexto del lote explica por qué fueron necesarios.
+
+### Reflexión: el bundle de 2 HUs en 2 días con Claude Code
+
+Trabajar en lotes con HITOs explícitos y validación humana en cada uno fue **mucho más sostenible** que intentar implementar todo de un tirón. Claude Code produjo código rápido, pero la mitad del valor estuvo en los reportes de cada lote ("estos archivos toqué, así verificás el HITO, espero feedback antes de seguir"). **Sin esos checkpoints habría sido fácil derrumbarme por sobrecarga cognitiva**: 17 archivos del Lote H + 18 tests del Lote I + 4 archivos de infra modificados es mucho diff para revisar de una sola sentada.
+
+El otro hallazgo importante fue que **los fixes que parecen "post-mortem" del lote en realidad son parte del lote**. El bug del nginx no es "una sorpresa que apareció después"; es "el lote H no estaba realmente terminado hasta que ejecuté HITO 5 y descubrí que el frontend en docker no llegaba al backend". Englobar esos fixes en el mismo commit del lote mantiene la trazabilidad y le da al revisor el contexto correcto.
+
+---
+
 ## Sobre el proceso SDD (Spec-Driven Development)
 
 **El plan ANTES del código no es burocracia, es ahorro de tiempo.** Mi `docs/day-0-bootstrap-plan.md` me obligó a:

@@ -32,6 +32,11 @@ management:
     mail:
       enabled: false
 
+# JWT secret para perfil 'test' (HU-F02): 64 bytes para HmacSHA256.
+jwt:
+  secret: test-only-jwt-secret-64-bytes-long-for-hmac-sha256-do-not-use-in-prod
+  access-ttl-minutes: 15
+
 logging:
   level:
     co.edu.unbosque.bloomtrade: DEBUG

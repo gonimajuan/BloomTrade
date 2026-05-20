@@ -1,7 +1,18 @@
 package co.edu.unbosque.bloomtrade.shared.web;
 
+import co.edu.unbosque.bloomtrade.auth.exception.AccountLockedException;
+import co.edu.unbosque.bloomtrade.auth.exception.AccountNotActiveException;
 import co.edu.unbosque.bloomtrade.auth.exception.EmailAlreadyRegisteredException;
+import co.edu.unbosque.bloomtrade.auth.exception.InvalidCredentialsException;
+import co.edu.unbosque.bloomtrade.auth.exception.MaxResendsExceededException;
+import co.edu.unbosque.bloomtrade.auth.exception.MfaCodeExpiredException;
+import co.edu.unbosque.bloomtrade.auth.exception.MfaInvalidCodeException;
+import co.edu.unbosque.bloomtrade.auth.exception.MfaSessionInvalidatedException;
 import co.edu.unbosque.bloomtrade.auth.exception.RegistrationTechnicalException;
+import co.edu.unbosque.bloomtrade.auth.exception.ResendCooldownActiveException;
+import co.edu.unbosque.bloomtrade.auth.exception.TempSessionInvalidException;
+import co.edu.unbosque.bloomtrade.auth.exception.TokenExpiredException;
+import co.edu.unbosque.bloomtrade.auth.exception.TokenInvalidException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -90,6 +101,141 @@ public class GlobalExceptionHandler {
         return internalError(request);
     }
 
+    @ExceptionHandler(TokenExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleTokenExpired(
+            TokenExpiredException ex, HttpServletRequest request) {
+        return authError(request, "TOKEN_EXPIRED");
+    }
+
+    @ExceptionHandler(TokenInvalidException.class)
+    public ResponseEntity<ErrorResponse> handleTokenInvalid(
+            TokenInvalidException ex, HttpServletRequest request) {
+        return authError(request, "TOKEN_INVALID");
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCredentials(
+            InvalidCredentialsException ex, HttpServletRequest request) {
+        return authError(request, "INVALID_CREDENTIALS");
+    }
+
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity<ErrorResponse> handleAccountLocked(
+            AccountLockedException ex, HttpServletRequest request) {
+        long seconds = ex.getSecondsRemaining();
+        long minutes = Math.max(1L, (seconds + 59) / 60);
+        String message =
+                String.format(
+                        "Cuenta bloqueada temporalmente por demasiados intentos fallidos. "
+                                + "Intenta de nuevo en %d minuto(s).",
+                        minutes);
+        return ResponseEntity.status(HttpStatus.LOCKED)
+                .header("Retry-After", String.valueOf(seconds))
+                .body(
+                        ErrorResponse.of(
+                                423,
+                                "ACCOUNT_LOCKED",
+                                message,
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(AccountNotActiveException.class)
+    public ResponseEntity<ErrorResponse> handleAccountNotActive(
+            AccountNotActiveException ex, HttpServletRequest request) {
+        String code = "ACCOUNT_NOT_ACTIVE";
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(
+                        ErrorResponse.of(
+                                403,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(TempSessionInvalidException.class)
+    public ResponseEntity<ErrorResponse> handleTempSessionInvalid(
+            TempSessionInvalidException ex, HttpServletRequest request) {
+        return authError(request, "TEMP_SESSION_INVALID");
+    }
+
+    @ExceptionHandler(MfaInvalidCodeException.class)
+    public ResponseEntity<ErrorResponse> handleMfaInvalidCode(
+            MfaInvalidCodeException ex, HttpServletRequest request) {
+        String message =
+                String.format(
+                        "Código incorrecto. Intentos restantes: %d.",
+                        ex.getAttemptsRemaining());
+        return ResponseEntity.badRequest()
+                .body(
+                        ErrorResponse.of(
+                                400,
+                                "MFA_INVALID_CODE",
+                                message,
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(MfaCodeExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleMfaCodeExpired(
+            MfaCodeExpiredException ex, HttpServletRequest request) {
+        String code = "MFA_CODE_EXPIRED";
+        return ResponseEntity.badRequest()
+                .body(
+                        ErrorResponse.of(
+                                400,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(MfaSessionInvalidatedException.class)
+    public ResponseEntity<ErrorResponse> handleMfaSessionInvalidated(
+            MfaSessionInvalidatedException ex, HttpServletRequest request) {
+        String code = "MFA_SESSION_INVALIDATED";
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(
+                        ErrorResponse.of(
+                                403,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(ResendCooldownActiveException.class)
+    public ResponseEntity<ErrorResponse> handleResendCooldown(
+            ResendCooldownActiveException ex, HttpServletRequest request) {
+        long seconds = ex.getSecondsRemaining();
+        String message =
+                String.format("Espera %d segundo(s) antes de solicitar otro código.", seconds);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(seconds))
+                .body(
+                        ErrorResponse.of(
+                                429,
+                                "RESEND_COOLDOWN_ACTIVE",
+                                message,
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(MaxResendsExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxResendsExceeded(
+            MaxResendsExceededException ex, HttpServletRequest request) {
+        String code = "MAX_RESENDS_EXCEEDED";
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(
+                        ErrorResponse.of(
+                                429,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(
             Exception ex, HttpServletRequest request) {
@@ -118,6 +264,17 @@ public class GlobalExceptionHandler {
                                 500,
                                 INTERNAL_ERROR,
                                 ValidationMessages.humanFor(INTERNAL_ERROR),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    private ResponseEntity<ErrorResponse> authError(HttpServletRequest request, String code) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(
+                        ErrorResponse.of(
+                                401,
+                                code,
+                                ValidationMessages.humanFor(code),
                                 request.getRequestURI(),
                                 TraceIdFilter.currentTraceId()));
     }

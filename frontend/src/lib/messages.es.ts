@@ -2,9 +2,16 @@
 // (validation-messages.properties, decisión D10 del plan). Punto único de localización del UI.
 
 const MESSAGES: Record<string, string> = {
+  // ── Genéricos ─────────────────────────────────────────────────────────────
   VALIDATION_REQUIRED: 'Este campo es obligatorio',
   VALIDATION_FAILED: 'Uno o más campos no superaron la validación',
   VALIDATION_INVALID_EMAIL: 'Formato de email inválido',
+  INTERNAL_ERROR:
+    'Error temporal del servidor. Por favor intenta de nuevo en unos momentos.',
+  NETWORK_ERROR: 'No se pudo contactar al servidor. Revisa tu conexión.',
+  UNKNOWN_ERROR: 'Ocurrió un error inesperado.',
+
+  // ── HU-F01 (registro) ────────────────────────────────────────────────────
   WEAK_PASSWORD:
     'Password debe tener al menos 10 caracteres, una mayúscula, una minúscula y un número',
   VALIDATION_INVALID_NAME: 'Nombre inválido: 3 a 100 caracteres, solo letras, espacios y tildes',
@@ -15,10 +22,24 @@ const MESSAGES: Record<string, string> = {
     'Teléfono inválido: formato E.164, por ejemplo +573001234567',
   TERMS_NOT_ACCEPTED: 'Debe aceptar los términos y condiciones',
   EMAIL_ALREADY_REGISTERED: 'Este correo ya está registrado. ¿Iniciar sesión?',
-  INTERNAL_ERROR:
-    'Error temporal del servidor. Por favor intenta de nuevo en unos momentos.',
-  NETWORK_ERROR: 'No se pudo contactar al servidor. Revisa tu conexión.',
-  UNKNOWN_ERROR: 'Ocurrió un error inesperado.',
+
+  // ── HU-F02 + HU-F03 (login + MFA) ────────────────────────────────────────
+  INVALID_CREDENTIALS: 'Credenciales inválidas.',
+  ACCOUNT_NOT_ACTIVE: 'Tu cuenta no está activa. Contacta al administrador.',
+  ACCOUNT_LOCKED:
+    'Cuenta bloqueada temporalmente por demasiados intentos fallidos.',
+  VALIDATION_INVALID_OTP: 'Código OTP inválido (debe ser 6 dígitos numéricos).',
+  MFA_INVALID_CODE: 'Código incorrecto.',
+  MFA_CODE_EXPIRED: 'El código ha expirado. Por favor solicita uno nuevo.',
+  MFA_SESSION_INVALIDATED:
+    'Demasiados intentos. Por favor inicia sesión de nuevo.',
+  TEMP_SESSION_INVALID:
+    'Tu sesión ha expirado. Por favor inicia sesión de nuevo.',
+  RESEND_COOLDOWN_ACTIVE: 'Espera unos segundos antes de solicitar otro código.',
+  MAX_RESENDS_EXCEEDED:
+    'Has alcanzado el máximo de reenvíos. Por favor inicia sesión de nuevo.',
+  TOKEN_EXPIRED: 'Tu sesión expiró. Inicia sesión de nuevo.',
+  TOKEN_INVALID: 'Tu sesión no es válida. Inicia sesión de nuevo.',
 };
 
 export function humanFor(code: string): string {

@@ -38,8 +38,15 @@ public class SecurityConfig {
                     "/v3/api-docs",
                     "/v3/api-docs/**"
                 ).permitAll()
-                // HU-F01: registro es endpoint público (spec §6.1). Login/MFA llegan en HU-F02.
-                .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
+                // HU-F01 registro + HU-F02 todo el flujo MFA (login + verify + resend) son
+                // públicos por spec — el sesion-id temporal autoriza los pasos 2 y 3, no el JWT.
+                .requestMatchers(
+                        HttpMethod.POST,
+                        "/api/v1/auth/register",
+                        "/api/v1/auth/login",
+                        "/api/v1/auth/mfa/verify",
+                        "/api/v1/auth/mfa/resend")
+                .permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
