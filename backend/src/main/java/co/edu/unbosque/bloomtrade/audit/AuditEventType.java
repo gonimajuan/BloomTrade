@@ -13,5 +13,11 @@ public enum AuditEventType {
     USER_REGISTRATION_FAILED,
 
     /** Email de bienvenida no enviado; el registro sí persistió (warning) — spec HU-F01 §9.1. */
-    WELCOME_EMAIL_FAILED
+    WELCOME_EMAIL_FAILED,
+
+    /** Email OTP de MFA no enviado; el login paso 1 sí generó sesión temporal. */
+    OTP_EMAIL_FAILED,
+
+    /** Email de bloqueo de cuenta no enviado; el bloqueo sí quedó aplicado en Redis. */
+    ACCOUNT_LOCKED_EMAIL_FAILED
 }

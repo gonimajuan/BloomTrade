@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Código de acceso BloomTrade</title>
+  </head>
+  <body style="font-family: Arial, Helvetica, sans-serif; background-color: #f4f5f7; margin: 0; padding: 24px;">
+    <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 8px; padding: 32px;">
+      <h1 style="color: #0f172a; font-size: 22px; margin-top: 0;">Verifica tu identidad</h1>
+      <p style="color: #334155; font-size: 15px;">
+        Hola <strong th:text="${nombreCompleto}">Inversionista</strong>,
+      </p>
+      <p style="color: #334155; font-size: 15px;">
+        Usa este código para completar tu inicio de sesión en BloomTrade:
+      </p>
+      <p style="margin: 28px 0; text-align: center;">
+        <span th:text="${otpCode}"
+              style="display: inline-block; letter-spacing: 6px; font-size: 32px; font-weight: 700; color: #0f172a; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px 20px;">
+          123456
+        </span>
+      </p>
+      <p style="color: #334155; font-size: 15px;">
+        El código expira en <strong th:text="${expiresInMinutes}">5</strong> minutos.
+      </p>
+      <p style="color: #64748b; font-size: 13px;">
+        Si no fuiste tú, ignora este email. Nadie podrá acceder sin el código.
+      </p>
+      <p style="color: #94a3b8; font-size: 12px; margin-bottom: 0;">
+        BloomTrade · Universidad El Bosque · Este es un correo automático, no respondas a este mensaje.
+      </p>
+    </div>
+  </body>
+</html>

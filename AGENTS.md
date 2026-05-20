@@ -30,7 +30,7 @@
 | Spec | `specs/HU-F02-F03-login-mfa/SPEC.md` v1.0 |
 | Plan | `specs/HU-F02-F03-login-mfa/plan.md` — **aprobado**, D1–D18 cerradas |
 | Tasks | `specs/HU-F02-F03-login-mfa/tasks.md` — Lotes A–I (E DIFERIDO por D18) |
-| Estado | **Lote A cerrado / HITO 1 verde**. T1.1–T1.7 + `application-test.yml` hechos; sigue Lote B (Notification refactor + templates). |
+| Estado | **Lotes A–B cerrados**. HITO 1 verde; `MailNotifierTest` verde. Sigue Lote C (Login flow). |
 
 ---
 
@@ -51,31 +51,36 @@
 - ✅ **application-test.yml** — agregado bloque `jwt.secret` + `jwt.access-ttl-minutes` para perfil `test`.
 - ✅ **HITO 1** — `compile` terminó en `BUILD SUCCESS` el 2026-05-20. Nota: `backend/mvnw.cmd` falló por bug del wrapper PowerShell (`Cannot index into a null array`); se validó usando la distribución Maven 3.9.9 ya provisionada por el wrapper en `C:\Users\juang\.m2\wrapper\dists\...`.
 
-**Siguiente para continuar — Lote B (Notification refactor + templates):**
+**Lote B cerrado — Notification refactor + templates:**
 
-- ☐ **T2.1** — `notification/Notifier.java`: agregar `sendOtpEmail(OtpEmailCommand)` y `sendAccountLockedEmail(AccountLockedEmailCommand)`.
-- ☐ **T2.2** — crear records `notification/dto/{OtpEmailCommand, AccountLockedEmailCommand}.java`.
-- ☐ **T2.3** — renombrar/expandir `WelcomeEmailDispatcher.java` a `MailNotifier.java` con los tres métodos.
-- ☐ **T2.4–T2.5** — crear templates `otp.html` y `account-locked.html`.
-- ☐ **T2.6–T2.7** — extender `AuditEventType` y actualizar tests de notificación.
+- ✅ **T2.1** — `notification/Notifier.java`: agregados `sendOtpEmail(OtpEmailCommand)` y `sendAccountLockedEmail(AccountLockedEmailCommand)`.
+- ✅ **T2.2** — creados records `notification/dto/{OtpEmailCommand, AccountLockedEmailCommand}.java`.
+- ✅ **T2.3** — `WelcomeEmailDispatcher.java` renombrado/expandido a `MailNotifier.java` con los tres métodos; welcome mantiene comportamiento.
+- ✅ **T2.4–T2.5** — creados templates `otp.html` y `account-locked.html`.
+- ✅ **T2.6–T2.7** — `AuditEventType` extendido y test renombrado a `MailNotifierTest` con 6 casos verdes.
+- ✅ Verificación — `compile` verde y `mvn ... -Dtest=MailNotifierTest test` verde el 2026-05-20.
 
-**Commit recomendado después de HITO 1** (no autónomo — lo firma el humano):
+**Siguiente para continuar — Lote C (Login flow):**
+
+- ☐ **T3.1** — `auth/repository/UserRepository.java`: agregar `Optional<User> findByEmailIgnoreCase(String)`.
+- ☐ **T3.2** — `auth/ratelimit/LoginAttemptTracker.java`.
+- ☐ **T3.3** — `auth/session/{TempSessionManager, TempSessionData, OtpGenerator}.java`.
+- ☐ **T3.4–T3.8** — DTOs/excepciones/handlers, `LoginService`, `LoginController`, `SecurityConfig permitAll`.
+
+**Commit recomendado para Lote B** (no autónomo — lo firma el humano):
 ```
-feat(auth): Lote A HU-F02 — JWT service + filter + AuthenticatedUser
+feat(notification): agrega emails MFA de OTP y bloqueo
 
-Reemplaza los stubs Día 0 de JwtService y JwtAuthenticationFilter por
-implementación real (jjwt 0.12.x, HS256, SecurityContext populated).
-Suma TokenExpired/TokenInvalid exceptions y handlers. validation-messages
-extendido con códigos de HU-F02. application-test.yml con jwt.secret.
+Extiende NotificationService con emails OTP y bloqueo de cuenta mediante
+MailNotifier, templates Thymeleaf y eventos de auditoría de fallo.
 
-Sin /refresh ni /logout (D18 del plan los difiere a mini-HU post-MVP).
+Renombra WelcomeEmailDispatcher a MailNotifier conservando el comportamiento
+del email de bienvenida de HU-F01.
 
 refs HU-F02 HU-F03 specs/HU-F02-F03-login-mfa/SPEC.md
 
-Co-authored-by: Claude <noreply@anthropic.com>
+Co-authored-by: Codex <noreply@openai.com>
 ```
-(Si el commit lo cierra un agente distinto a Claude, ajustar el trailer
-al nombre del agente — ver §"Co-author" abajo.)
 
 ---
 

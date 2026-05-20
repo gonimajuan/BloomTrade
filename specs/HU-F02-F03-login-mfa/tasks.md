@@ -20,13 +20,13 @@ Leyenda: ☐ pendiente · ◐ en progreso · ☑ hecho · ✗ cancelado/diferido
 
 ## Lote B — Notification refactor + templates
 
-- ☐ **T2.1** `notification/Notifier.java` MODIFICADO: + `void sendOtpEmail(OtpEmailCommand)` y `void sendAccountLockedEmail(AccountLockedEmailCommand)`.
-- ☐ **T2.2** `notification/dto/{OtpEmailCommand, AccountLockedEmailCommand}.java` — records.
-- ☐ **T2.3** `notification/MailNotifier.java` — RENAME de `WelcomeEmailDispatcher.java`; implementa los 3 métodos. `sendWelcomeEmail` queda idéntico en comportamiento. Los nuevos métodos siguen el mismo patrón (`@Async` + JavaMailSender + Thymeleaf + audit on failure).
-- ☐ **T2.4** `resources/templates/email/otp.html` — Thymeleaf con OTP destacado tipográficamente, variables `{nombreCompleto, otpCode, expiresInMinutes}`.
-- ☐ **T2.5** `resources/templates/email/account-locked.html` — variables `{nombreCompleto, lockDurationMinutes}`.
-- ☐ **T2.6** `audit/AuditEventType.java` MODIFICADO: + `OTP_EMAIL_FAILED, ACCOUNT_LOCKED_EMAIL_FAILED` (paralelo a `WELCOME_EMAIL_FAILED`).
-- ☐ **T2.7** `unit/notification/WelcomeEmailDispatcherTest.java` → RENAME a `MailNotifierTest.java`, agregar tests para los 3 métodos (welcome sigue verde + 2 nuevos happy/failure).
+- ☑ **T2.1** `notification/Notifier.java` MODIFICADO: + `void sendOtpEmail(OtpEmailCommand)` y `void sendAccountLockedEmail(AccountLockedEmailCommand)`.
+- ☑ **T2.2** `notification/dto/{OtpEmailCommand, AccountLockedEmailCommand}.java` — records.
+- ☑ **T2.3** `notification/MailNotifier.java` — RENAME de `WelcomeEmailDispatcher.java`; implementa los 3 métodos. `sendWelcomeEmail` queda idéntico en comportamiento. Los nuevos métodos siguen el mismo patrón (`@Async` + JavaMailSender + Thymeleaf + audit on failure).
+- ☑ **T2.4** `resources/templates/email/otp.html` — Thymeleaf con OTP destacado tipográficamente, variables `{nombreCompleto, otpCode, expiresInMinutes}`.
+- ☑ **T2.5** `resources/templates/email/account-locked.html` — variables `{nombreCompleto, lockDurationMinutes}`.
+- ☑ **T2.6** `audit/AuditEventType.java` MODIFICADO: + `OTP_EMAIL_FAILED, ACCOUNT_LOCKED_EMAIL_FAILED` (paralelo a `WELCOME_EMAIL_FAILED`).
+- ☑ **T2.7** `unit/notification/WelcomeEmailDispatcherTest.java` → RENAME a `MailNotifierTest.java`, agregar tests para los 3 métodos (welcome sigue verde + 2 nuevos happy/failure). **← Lote B verde** (`compile` + `-Dtest=MailNotifierTest test` verdes 2026-05-20).
 
 ## Lote C — Login flow
 

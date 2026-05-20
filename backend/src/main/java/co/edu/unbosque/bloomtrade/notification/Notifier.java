@@ -1,5 +1,7 @@
 package co.edu.unbosque.bloomtrade.notification;
 
+import co.edu.unbosque.bloomtrade.notification.dto.AccountLockedEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.OtpEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.WelcomeEmailCommand;
 
 /**
@@ -10,4 +12,10 @@ public interface Notifier {
 
     /** Envía (asíncronamente) el email de bienvenida; su fallo no revierte el registro. */
     void sendWelcomeEmail(WelcomeEmailCommand command);
+
+    /** Envía (asíncronamente) el OTP de MFA; su fallo no revierte el login paso 1. */
+    void sendOtpEmail(OtpEmailCommand command);
+
+    /** Envía (asíncronamente) el aviso de bloqueo temporal por intentos fallidos. */
+    void sendAccountLockedEmail(AccountLockedEmailCommand command);
 }
