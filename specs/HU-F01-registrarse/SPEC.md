@@ -12,8 +12,8 @@
 | Estado | Ready |
 | Autor | *[Tu nombre]* |
 | Fecha creación | 2026-05-08 |
-| Última actualización | 2026-05-08 |
-| Versión spec | 1.1 |
+| Última actualización | 2026-05-19 |
+| Versión spec | 1.2 |
 | Día estimado del ROADMAP | Día 1 |
 
 ---
@@ -467,6 +467,21 @@ Ninguna nueva. Esta feature no expone interfaces hacia otros módulos.
 | Mantener registro de auditoría | TAC-S4 | Eventos `USER_REGISTERED`, `USER_REGISTRATION_FAILED`, `WELCOME_EMAIL_FAILED` emitidos a ElasticSearch |
 | Encapsular | TAC-M3 | Política de password encapsulada en `PasswordPolicyValidator`; lógica de hashing encapsulada en `BCryptPasswordEncoder` (Spring Security) |
 
+### 8.5 Desviación arquitectónica aceptada: creación del balance inicial
+
+**Contexto.** ARCHITECTURE.md §3 sitúa `BalanceInitializer` dentro del módulo PortfolioService. Sin embargo, el registro de un nuevo inversionista debe crear `app.users` **y** `app.user_balances` en la **misma transacción ACID** (regla de negocio: un usuario sin balance no debe poder existir aunque sea por una ventana de milisegundos).
+
+**Decisión.** `AuthService.RegisterService` (módulo Auth) invoca a `PortfolioService.BalanceInitializer` (módulo Portfolio) dentro de su propia `@Transactional`. La interfaz la expone PortfolioService (`BalanceInitializer`, sin prefijo `I` por CONVENTIONS §5.3 — ver `plan.md` decisión D1); la consume directamente Auth. Esto cruza una frontera de módulo dentro de la misma transacción.
+
+**Por qué se acepta el cruce.**
+- **Atomicidad financiera no negociable:** el balance debe nacer con el usuario, en una sola transacción ACID. Una alternativa event-driven (publicar `UserRegistered` y que un listener de Portfolio cree el balance asíncrono) introduciría una ventana de inconsistencia (usuario sin balance) y requeriría compensación si la creación del balance fallara post-commit del usuario.
+- **Costo del workaround:** habilitar consistencia eventual con saga compensatoria o outbox pattern es inviable para el plazo de 2 semanas del MVP.
+- **Encapsulación preservada:** Portfolio sigue siendo dueña de la lógica del balance (`BalanceInitializer.initializeBalance(userId)`); Auth no conoce el modelo de datos de `app.user_balances`. La dependencia es **por interfaz**, no por entidad.
+
+**Plan de refactor post-MVP.** Migrar a evento de dominio + listener en Portfolio + outbox pattern para garantizar at-least-once y desacoplar transaccionalmente los módulos. Registrado como deuda en `ROADMAP.md` post-MVP.
+
+**Impacto en ARCHITECTURE.md.** El changelog 2.1 de ARCHITECTURE.md (2026-05-08) ya documenta esta dependencia: *"PortfolioService EXPONE IBalanceInitializer CONSUME AuthService.RegisterService"*. Esta §8.5 es la justificación que ese changelog adelantaba.
+
 ---
 
 ## 9. Efectos colaterales
@@ -496,6 +511,19 @@ No aplica. El registro no toca Redis.
 | MailHog (SMTP) | `mailhog:1025` | Spring Mail (vía `JavaMailSender`) | Después del commit de la transacción de registro, asíncronamente |
 
 > Nota: MailHog no requiere `IntegrationService` adapter porque es protocolo SMTP estándar manejado por Spring Mail. Esto es coherente con `ARCHITECTURE.md` §8 — el adapter es para APIs HTTP de terceros (Alpaca, Polygon, Stripe, Twilio).
+
+---
+
+## 10. Riesgos y mitigaciones
+
+| # | Riesgo | Probabilidad | Impacto | Mitigación |
+|---|---|---|---|---|
+| R1 | El email de bienvenida falla silenciosamente (MailHog caído) y el usuario nuevo no recibe confirmación | Baja en dev / Media en prod | Bajo | El flujo no bloquea: 201 se devuelve igual; se emite evento `WELCOME_EMAIL_FAILED` a auditoría para reintento manual o automático (post-MVP). Cubierto por test unit `WelcomeEmailDispatcherTest`. |
+| R2 | Carrera por el índice único `idx_users_email_lower` entre dos POST simultáneos con el mismo email | Baja | Bajo | `RegisterService` captura `DataIntegrityViolationException` y la mapea a 409 `EMAIL_ALREADY_REGISTERED` con audit `EMAIL_DUPLICATE`. Cubierto por test unit `RegisterServiceTest#shouldMapUniqueIndexRaceToEmailDuplicate`. |
+| R3 | `password_hash` o el password plaintext aparece en logs JSON (Logback/Logstash) por accidente | Baja | Alto (compliance/PII) | (1) DTOs no se serializan a logs — sólo el response sin hash, ver `UserMapper`. (2) Excepciones técnicas mandan stack al log de aplicación pero NO al evento de auditoría (§5.3.5). (3) RNF §11.2 lo verifica vía inspección manual en Kibana. |
+| R4 | BCrypt cost 12 lentifica el endpoint por debajo del SLO (<1s p95) bajo concurrencia | Baja en MVP / Media en producción | Medio | RNF §11.2 mide p95; si se desborda, alternativas: (a) bajar cost a 10 documentándolo, (b) introducir cola de hash. Por ahora se acepta el costo por seguridad (D13 del plan). |
+| R5 | El `Notifier` asíncrono retrasa la liberación del thread del request si `notificationExecutor` se satura | Baja | Bajo | El executor tiene queue cap 50 (`AsyncConfig`); si se llena, la tarea se rechaza y se audita `WELCOME_EMAIL_FAILED`. El request HTTP nunca espera por el envío de mail. |
+| R6 | El cliente envía caracteres no-ASCII en `nombreCompleto` y se corrompen en BD por encoding | Baja | Bajo | Postgres en UTF-8 (`postgres:16-alpine` default), JPA/Hibernate UTF-8 default, `Content-Type: application/json; charset=UTF-8`. Verificado en HITO 3 con `Juan Pérez García` round-trip a BD (`char_length=17`, `octet_length=19`). |
 
 ---
 
@@ -592,7 +620,7 @@ Funcionalidad: Registro de inversionista nuevo
       | valor             | httpStatus | errorCode                |
       | "3001234567"      | 400        | VALIDATION_INVALID_PHONE |
       | "+0123456789"     | 400        | VALIDATION_INVALID_PHONE |
-      | "+57"             | 400        | VALIDATION_INVALID_PHONE |
+      | "+57"             | 201        | (none)                   |
       | "+573001234567"   | 201        | (none)                   |
 
   Esquema del escenario: Validación del campo numeroDocumento según tipoDocumento
@@ -751,4 +779,5 @@ Funcionalidad: Registro de inversionista nuevo
 | Versión | Fecha | Cambio | Razón |
 |---|---|---|---|
 | 1.0 | 2026-05-08 | Versión inicial | Primera spec del MVP |
-| 1.1 | 2026-05-08 | Resuelta pregunta abierta #1 sobre responsabilidad de creación del balance inicial. Agregada §8.5 documentando la desviación arquitectónica aceptada. | Decisión tomada: AuthService crea el balance vía BalanceInitializer en misma transacción. Refactor a event-driven queda como post-MVP. |
+| 1.1 | 2026-05-08 | Resuelta pregunta abierta #1 sobre responsabilidad de creación del balance inicial. (Anunciada §8.5, agregada de verdad en v1.2.) | Decisión tomada: AuthService crea el balance vía BalanceInitializer en misma transacción. Refactor a event-driven queda como post-MVP. |
+| 1.2 | 2026-05-19 | Cierre HU-F01: agrega §8.5 (detalle de la desviación arquitectónica AuthService→PortfolioService.BalanceInitializer que el changelog v1.1 anunciaba sin redactar) + §10 nueva (Riesgos y mitigaciones, R1–R6 trazables a tests). Corrige ejemplo Gherkin de §11 `"+57"`→201 alineado al regex del contrato §6.1 (resuelve inconsistencia interna, decisión D15 del plan.md). | Cierre del trabajo de completitud de SPEC pendiente del plan.md Q1; mantenimiento de la trazabilidad SDD (los SPECs son la principal evidencia académica). |

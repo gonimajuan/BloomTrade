@@ -489,7 +489,7 @@ Plantilla por entrada:
 **Commit asociado:** `abc1234`
 ```
 
-Esta bitácora es **el principal artefacto de evidencia** para el profesor. Sin ella, la justificación SDD pierde fuerza.
+> **Actualizado 2026-05-19:** consultado el profesor, la bitácora **NO es un entregable prioritario**. Los `spec.md` y `plan.md` por HU son la **principal evidencia SDD** que se evalúa. Esta sección queda como sugerencia opcional para tracking interno del desarrollador, no como artefacto académico evaluable. El esfuerzo que iría a la bitácora se reasigna a calidad y completitud de los SPECs (secciones faltantes, decisiones documentadas, trazabilidad criterios↔artefactos, changelogs).
 
 ### 11.4 Acciones permitidas a Claude Code
 
