@@ -12,17 +12,14 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * Test de contrato OpenAPI (CONVENTIONS §7.2, spec HU-F01 §15 DoD): el spec generado por
- * SpringDoc en {@code /v3/api-docs} contiene {@code POST /api/v1/auth/register} con los códigos
- * 201/400/409/500 documentados.
+ * Test de contrato OpenAPI (CONVENTIONS §7.2): el spec generado por SpringDoc en
+ * {@code /v3/api-docs} contiene los endpoints de auth con todos los códigos documentados.
+ *
+ * <p>Cubre HU-F01 ({@code /register}) y HU-F02 ({@code /login}, {@code /mfa/verify},
+ * {@code /mfa/resend}). Redis se autoconfigura porque los IT del Lote F lo usan y queremos un
+ * único context cacheado por Spring Boot Test entre tests.
  */
-@SpringBootTest(
-        webEnvironment = WebEnvironment.RANDOM_PORT,
-        properties = {
-            "spring.autoconfigure.exclude="
-                    + "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                    + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration"
-        })
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 class OpenApiContractIT {
 
@@ -30,18 +27,54 @@ class OpenApiContractIT {
 
     @Test
     void shouldExposeRegisterEndpointInOpenApiWithAllResponseCodes() throws Exception {
-        String body = rest.getForObject("/v3/api-docs", String.class);
-        assertThat(body).isNotBlank();
+        JsonNode responses = postResponses("/api/v1/auth/register");
 
-        JsonNode root = new ObjectMapper().readTree(body);
-        JsonNode post =
-                root.path("paths").path("/api/v1/auth/register").path("post");
-        assertThat(post.isMissingNode()).as("POST /api/v1/auth/register debe existir").isFalse();
-
-        JsonNode responses = post.path("responses");
         assertThat(responses.has("201")).as("201 documentado").isTrue();
         assertThat(responses.has("400")).as("400 documentado").isTrue();
         assertThat(responses.has("409")).as("409 documentado").isTrue();
         assertThat(responses.has("500")).as("500 documentado").isTrue();
+    }
+
+    @Test
+    void shouldExposeLoginEndpointInOpenApiWithAllResponseCodes() throws Exception {
+        JsonNode responses = postResponses("/api/v1/auth/login");
+
+        assertThat(responses.has("200")).as("200 documentado").isTrue();
+        assertThat(responses.has("400")).as("400 documentado").isTrue();
+        assertThat(responses.has("401")).as("401 documentado").isTrue();
+        assertThat(responses.has("403")).as("403 documentado").isTrue();
+        assertThat(responses.has("423")).as("423 documentado").isTrue();
+        assertThat(responses.has("500")).as("500 documentado").isTrue();
+    }
+
+    @Test
+    void shouldExposeMfaVerifyEndpointInOpenApiWithAllResponseCodes() throws Exception {
+        JsonNode responses = postResponses("/api/v1/auth/mfa/verify");
+
+        assertThat(responses.has("200")).as("200 documentado").isTrue();
+        assertThat(responses.has("400")).as("400 documentado").isTrue();
+        assertThat(responses.has("401")).as("401 documentado").isTrue();
+        assertThat(responses.has("403")).as("403 documentado").isTrue();
+        assertThat(responses.has("500")).as("500 documentado").isTrue();
+    }
+
+    @Test
+    void shouldExposeMfaResendEndpointInOpenApiWithAllResponseCodes() throws Exception {
+        JsonNode responses = postResponses("/api/v1/auth/mfa/resend");
+
+        assertThat(responses.has("200")).as("200 documentado").isTrue();
+        assertThat(responses.has("400")).as("400 documentado").isTrue();
+        assertThat(responses.has("401")).as("401 documentado").isTrue();
+        assertThat(responses.has("429")).as("429 documentado").isTrue();
+        assertThat(responses.has("500")).as("500 documentado").isTrue();
+    }
+
+    private JsonNode postResponses(String path) throws Exception {
+        String body = rest.getForObject("/v3/api-docs", String.class);
+        assertThat(body).isNotBlank();
+        JsonNode root = new ObjectMapper().readTree(body);
+        JsonNode post = root.path("paths").path(path).path("post");
+        assertThat(post.isMissingNode()).as("POST %s debe existir", path).isFalse();
+        return post.path("responses");
     }
 }

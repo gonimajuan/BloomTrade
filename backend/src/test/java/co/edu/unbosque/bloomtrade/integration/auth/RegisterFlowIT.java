@@ -33,16 +33,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 /**
- * IT del flujo de registro (spec HU-F01 §11). Postgres real vía Testcontainers (perfil 'test',
- * JDBC URL mágica de application-test.yml). Redis autoconfig excluido (D12: HU-F01 no usa Redis).
- * JavaMailSender mockeado (no SMTP real); Auditor mockeado para verificar emisión de eventos.
+ * IT del flujo de registro (spec HU-F01 §11). Postgres + Redis reales del docker-compose
+ * (perfil 'test'). La exclusión inicial de RedisAutoConfiguration (D12 de HU-F01) se removió en
+ * Lote F de HU-F02 porque los beans nuevos del módulo auth (LoginAttemptTracker,
+ * TempSessionManager, MfaAttemptTracker) requieren {@code StringRedisTemplate}; sin él el context
+ * no levanta. JavaMailSender mockeado (no SMTP real); Auditor mockeado para verificar emisión.
  */
-@SpringBootTest(
-        properties = {
-            "spring.autoconfigure.exclude="
-                    + "org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,"
-                    + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration"
-        })
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class RegisterFlowIT {

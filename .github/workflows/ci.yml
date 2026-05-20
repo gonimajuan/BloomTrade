@@ -32,6 +32,17 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+      # Redis para HU-F02 (Lote F T5.10): los IT AuthFlowIT y LockoutFlowIT requieren un
+      # Redis real. El secret de JWT viene hardcodeado en application-test.yml, no por env.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4

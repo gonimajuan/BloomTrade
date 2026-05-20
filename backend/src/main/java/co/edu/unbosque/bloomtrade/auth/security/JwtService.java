@@ -36,9 +36,12 @@ public class JwtService {
     private final Duration accessTokenTtl;
 
     public JwtService(
-            @Value("${jwt.secret:${JWT_SECRET}}") String secret,
+            @Value("${jwt.secret:${JWT_SECRET:}}") String secret,
             @Value("${jwt.access-ttl-minutes:${JWT_ACCESS_TTL_MINUTES:15}}")
                     long accessTtlMinutes) {
+        // Default vacío en el placeholder interno evita el "Could not resolve placeholder
+        // JWT_SECRET" cuando ni la env var ni jwt.secret están definidos en algún perfil.
+        // Si llegamos acá con un secret vacío, fallamos con un mensaje accionable.
         byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
         if (keyBytes.length < 32) {
             throw new IllegalStateException(
