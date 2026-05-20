@@ -19,5 +19,19 @@ public enum AuditEventType {
     OTP_EMAIL_FAILED,
 
     /** Email de bloqueo de cuenta no enviado; el bloqueo sí quedó aplicado en Redis. */
-    ACCOUNT_LOCKED_EMAIL_FAILED
+    ACCOUNT_LOCKED_EMAIL_FAILED,
+
+    /**
+     * Intento de inicio de sesión (paso 1). {@code result=ALLOWED} cuando las credenciales fueron
+     * válidas y se emitió OTP; {@code DENIED} cuando falló (con {@code details.reason}).
+     * Spec HU-F02 §9.1.
+     */
+    LOGIN_ATTEMPT,
+
+    /**
+     * Cuenta bloqueada automáticamente tras 3 intentos fallidos consecutivos (TAC-S3). Spec
+     * HU-F02 §9.1; detail incluye {@code reason="MAX_LOGIN_ATTEMPTS"} y
+     * {@code lockDurationSeconds=900}.
+     */
+    ACCOUNT_LOCKED
 }

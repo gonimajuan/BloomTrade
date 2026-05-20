@@ -1,6 +1,9 @@
 package co.edu.unbosque.bloomtrade.shared.web;
 
+import co.edu.unbosque.bloomtrade.auth.exception.AccountLockedException;
+import co.edu.unbosque.bloomtrade.auth.exception.AccountNotActiveException;
 import co.edu.unbosque.bloomtrade.auth.exception.EmailAlreadyRegisteredException;
+import co.edu.unbosque.bloomtrade.auth.exception.InvalidCredentialsException;
 import co.edu.unbosque.bloomtrade.auth.exception.RegistrationTechnicalException;
 import co.edu.unbosque.bloomtrade.auth.exception.TokenExpiredException;
 import co.edu.unbosque.bloomtrade.auth.exception.TokenInvalidException;
@@ -102,6 +105,47 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleTokenInvalid(
             TokenInvalidException ex, HttpServletRequest request) {
         return authError(request, "TOKEN_INVALID");
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCredentials(
+            InvalidCredentialsException ex, HttpServletRequest request) {
+        return authError(request, "INVALID_CREDENTIALS");
+    }
+
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity<ErrorResponse> handleAccountLocked(
+            AccountLockedException ex, HttpServletRequest request) {
+        long seconds = ex.getSecondsRemaining();
+        long minutes = Math.max(1L, (seconds + 59) / 60);
+        String message =
+                String.format(
+                        "Cuenta bloqueada temporalmente por demasiados intentos fallidos. "
+                                + "Intenta de nuevo en %d minuto(s).",
+                        minutes);
+        return ResponseEntity.status(HttpStatus.LOCKED)
+                .header("Retry-After", String.valueOf(seconds))
+                .body(
+                        ErrorResponse.of(
+                                423,
+                                "ACCOUNT_LOCKED",
+                                message,
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(AccountNotActiveException.class)
+    public ResponseEntity<ErrorResponse> handleAccountNotActive(
+            AccountNotActiveException ex, HttpServletRequest request) {
+        String code = "ACCOUNT_NOT_ACTIVE";
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(
+                        ErrorResponse.of(
+                                403,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
     }
 
     @ExceptionHandler(Exception.class)

@@ -38,8 +38,12 @@ public class SecurityConfig {
                     "/v3/api-docs",
                     "/v3/api-docs/**"
                 ).permitAll()
-                // HU-F01: registro es endpoint público (spec §6.1). Login/MFA llegan en HU-F02.
-                .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll()
+                // HU-F01 registro + HU-F02 login (paso 1 del flujo MFA) son públicos por spec.
+                .requestMatchers(
+                        HttpMethod.POST,
+                        "/api/v1/auth/register",
+                        "/api/v1/auth/login")
+                .permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
