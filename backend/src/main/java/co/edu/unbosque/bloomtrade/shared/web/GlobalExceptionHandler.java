@@ -2,6 +2,8 @@ package co.edu.unbosque.bloomtrade.shared.web;
 
 import co.edu.unbosque.bloomtrade.auth.exception.EmailAlreadyRegisteredException;
 import co.edu.unbosque.bloomtrade.auth.exception.RegistrationTechnicalException;
+import co.edu.unbosque.bloomtrade.auth.exception.TokenExpiredException;
+import co.edu.unbosque.bloomtrade.auth.exception.TokenInvalidException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -90,6 +92,18 @@ public class GlobalExceptionHandler {
         return internalError(request);
     }
 
+    @ExceptionHandler(TokenExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleTokenExpired(
+            TokenExpiredException ex, HttpServletRequest request) {
+        return authError(request, "TOKEN_EXPIRED");
+    }
+
+    @ExceptionHandler(TokenInvalidException.class)
+    public ResponseEntity<ErrorResponse> handleTokenInvalid(
+            TokenInvalidException ex, HttpServletRequest request) {
+        return authError(request, "TOKEN_INVALID");
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(
             Exception ex, HttpServletRequest request) {
@@ -118,6 +132,17 @@ public class GlobalExceptionHandler {
                                 500,
                                 INTERNAL_ERROR,
                                 ValidationMessages.humanFor(INTERNAL_ERROR),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    private ResponseEntity<ErrorResponse> authError(HttpServletRequest request, String code) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(
+                        ErrorResponse.of(
+                                401,
+                                code,
+                                ValidationMessages.humanFor(code),
                                 request.getRequestURI(),
                                 TraceIdFilter.currentTraceId()));
     }
