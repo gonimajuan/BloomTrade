@@ -17,6 +17,8 @@ export interface ParsedError {
   fieldErrors: Record<string, { code: string; message: string }>;
   /** traceId para diagnóstico cuando el backend lo provee. */
   traceId?: string;
+  /** Segundos a esperar (header {@code Retry-After}), si el backend lo envió (429 típico). */
+  retryAfter?: number;
 }
 
 function isAxiosError(err: unknown): err is AxiosError<ErrorResponse> {
@@ -26,6 +28,7 @@ function isAxiosError(err: unknown): err is AxiosError<ErrorResponse> {
 export function parseError(error: unknown): ParsedError {
   if (isAxiosError(error)) {
     const data = error.response?.data;
+    const retryAfter = readRetryAfter(error);
     if (data && typeof data === 'object' && 'error' in data) {
       const fieldErrors: ParsedError['fieldErrors'] = {};
       for (const fe of data.fieldErrors ?? []) {
@@ -37,6 +40,7 @@ export function parseError(error: unknown): ParsedError {
         status: data.status,
         fieldErrors,
         traceId: data.traceId,
+        retryAfter,
       };
     }
     return {
@@ -44,6 +48,7 @@ export function parseError(error: unknown): ParsedError {
       message: humanFor('NETWORK_ERROR'),
       status: error.response?.status ?? 0,
       fieldErrors: {},
+      retryAfter,
     };
   }
   return {
@@ -52,4 +57,11 @@ export function parseError(error: unknown): ParsedError {
     status: 0,
     fieldErrors: {},
   };
+}
+
+function readRetryAfter(error: AxiosError<ErrorResponse>): number | undefined {
+  const raw = error.response?.headers?.['retry-after'];
+  if (raw === undefined || raw === null) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
