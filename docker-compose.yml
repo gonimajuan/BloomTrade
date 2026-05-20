@@ -156,6 +156,10 @@ services:
       LOGSTASH_PORT: 5044
       SPRING_MAIL_HOST: mailhog
       SPRING_MAIL_PORT: 1025
+      # JWT (HU-F02 Lote A): el JwtService valida >= 32 bytes en el constructor.
+      # `:?` aborta el up con mensaje accionable si falta o queda vacío en .env.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET debe estar definido en .env (>=32 bytes; generar con openssl rand -base64 64)}
+      JWT_ACCESS_TTL_MINUTES: ${JWT_ACCESS_TTL_MINUTES:-15}
     ports:
       - "8080:8080"
     depends_on:
