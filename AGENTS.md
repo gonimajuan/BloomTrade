@@ -30,57 +30,36 @@
 | Spec | `specs/HU-F02-F03-login-mfa/SPEC.md` v1.0 |
 | Plan | `specs/HU-F02-F03-login-mfa/plan.md` — **aprobado**, D1–D18 cerradas |
 | Tasks | `specs/HU-F02-F03-login-mfa/tasks.md` — Lotes A–I (E DIFERIDO por D18) |
-| Estado | **Lotes A–B cerrados**. HITO 1 verde; `MailNotifierTest` verde. Sigue Lote C (Login flow). |
+| Estado | **Lotes A–H cerrados**. HITO 5 (E2E manual `registro → login → MFA → dashboard`) verde el 2026-05-20. `mvn verify` verde con 90 tests. Sigue Lote I (tests frontend + APRENDIZAJES.md + PR). |
 
 ---
 
 ## Cómo continuar (handoff Claude → próximo agente)
 
-**Hecho en esta rama, sin commitear todavía:**
-- ✅ T1.1 — Decisión: usar `StringRedisTemplate` autoconfigurado (no hace falta `RedisConfig.java` propio; documentar en commit).
-- ✅ T1.2 — `auth/security/AuthenticatedUser.java` (record `UUID userId, String role`).
-- ✅ T1.3 — `auth/security/JwtService.java` impl completa (jjwt 0.12.x, HS256, secret de `${JWT_SECRET}`, default TTL 15 min).
-- ✅ T1.4 — `auth/exception/{TokenExpiredException, TokenInvalidException}.java`.
-- ✅ T1.5 — `config/JwtAuthenticationFilter.java` reescrito (Día 0 era passthrough; ahora valida Bearer, popula SecurityContext, escribe 401 con `ErrorResponse` específico si el token es expirado/inválido).
-- ✅ Eliminado el stub Día 0 `auth/JwtService.java`.
+**Estado del bundle — todos los Lotes funcionales cerrados y commiteados.**
 
-**Lote A cerrado → HITO 1 (`mvnw compile` verde):**
+| Lote | Commit | Resumen | HITO |
+|---|---|---|---|
+| A — JWT + filter + handlers | `c3fe843` (Codex) | `JwtService` HS256 + jjwt 0.12.x, `JwtAuthenticationFilter` validando Bearer, 2 excepciones + 2 handlers de token, `application-test.yml` con `jwt.secret`. | HITO 1 (compile verde) |
+| B — Notification refactor | `1734a79` (Codex) | `WelcomeEmailDispatcher` → `MailNotifier` con `sendOtpEmail` + `sendAccountLockedEmail`, templates `otp.html` y `account-locked.html`, `AuditEventType` con eventos `*_EMAIL_FAILED`. | `MailNotifierTest` 6 verdes |
+| C — Login flow | `a55c553` (Claude) | `UserRepository.findByEmailIgnoreCase`, `LoginAttemptTracker`, `TempSessionManager/TempSessionData/OtpGenerator`, DTOs + 3 excepciones + handlers (401/423/403), `LoginService` + `LoginController`, SecurityConfig permitAll. AuditEventType + `LOGIN_ATTEMPT`/`ACCOUNT_LOCKED`. | HITO 2 (mvn compile verde, 57 src) |
+| D — MFA flow | *commit user* | `MfaAttemptTracker`, `TokenIssuer`, 4 DTOs + 6 excepciones + handlers, `MfaService` (verify + resend) + `MfaController`, SecurityConfig permitAll. AuditEventType + 4 eventos MFA. | HITO 3 (mvn compile verde, 71 src) |
+| ~E — Refresh/Logout~ | DIFERIDO por D18 | Mini-HU futura `HU-F0X-token-rotation-logout`. | — |
+| F — Tests backend + CI Redis | *commit user* | 7 tests unit (46 casos: JwtService, OtpGenerator, trackers, services, TokenIssuer), 3 IT (AuthFlowIT, LockoutFlowIT, OpenApiContractIT extendido), `ci.yml` con service redis. Fix de placeholder `${JWT_SECRET:}` + RegisterFlowIT sin exclude de Redis. | HITO 4 (`mvn verify` verde — 90 tests) |
+| G — Frontend infra | *commit user* | `AuthContext` + `AuthProvider` + `useAuth`, `apiClient` con interceptors JWT (D18 simplificado), `ProtectedRoute`, tipos + mensajes ES extendidos, `useSession` borrado, `main.tsx` envuelto en AuthProvider, `errorParser` + `retryAfter`. | tsc/build/test frontend verdes |
+| H — Frontend pages | *commit user* | 2 schemas zod, 3 hooks, 4 componentes (Countdown, OTPInput, AppHeader, ResendButton), `LoginForm`, 3 pages (LoginPage real, MFAVerifyPage, DashboardPage), `App.tsx` con rutas + ProtectedRoute. Fixes infra: `docker-compose.yml` con JWT_SECRET + `nginx.conf` sin trailing slash en proxy_pass. | **HITO 5 ✅** E2E manual completo registro → login → MFA con OTP de MailHog → dashboard. |
 
-- ✅ **T1.6** — `shared/web/GlobalExceptionHandler.java` tiene handlers para `TokenExpiredException` y `TokenInvalidException`, delegando a `authError(request, code)`.
-- ✅ **T1.7** — `backend/src/main/resources/validation-messages.properties` extendido con códigos de HU-F02/HU-F03.
-- ✅ **application-test.yml** — agregado bloque `jwt.secret` + `jwt.access-ttl-minutes` para perfil `test`.
-- ✅ **HITO 1** — `compile` terminó en `BUILD SUCCESS` el 2026-05-20. Nota: `backend/mvnw.cmd` falló por bug del wrapper PowerShell (`Cannot index into a null array`); se validó usando la distribución Maven 3.9.9 ya provisionada por el wrapper en `C:\Users\juang\.m2\wrapper\dists\...`.
+**Siguiente — Lote I (cierre del bundle):**
 
-**Lote B cerrado — Notification refactor + templates:**
+- ☐ **T8.1–T8.5** Tests frontend con Vitest + RTL: `AuthContext`, `LoginForm`, `MFAVerifyPage`, `ProtectedRoute`, `jwtInterceptor`.
+- ☐ **T8.6** Verificación DoD spec §15 — marcar N/A explícitos los ítems de refresh/logout por D18.
+- ☐ **T8.7** `APRENDIZAJES.md` — sección "Día 2-3 — HU-F02+F03" en primera persona, estilo Día 0/Día 1 ([[P4]]).
+- ☐ **T8.8** PR `feat/HU-F02-F03-login-mfa` → `main` con plantilla CONVENTIONS §4.1 + checklist DoD (N/A explícitos por D18). HITO 6.
 
-- ✅ **T2.1** — `notification/Notifier.java`: agregados `sendOtpEmail(OtpEmailCommand)` y `sendAccountLockedEmail(AccountLockedEmailCommand)`.
-- ✅ **T2.2** — creados records `notification/dto/{OtpEmailCommand, AccountLockedEmailCommand}.java`.
-- ✅ **T2.3** — `WelcomeEmailDispatcher.java` renombrado/expandido a `MailNotifier.java` con los tres métodos; welcome mantiene comportamiento.
-- ✅ **T2.4–T2.5** — creados templates `otp.html` y `account-locked.html`.
-- ✅ **T2.6–T2.7** — `AuditEventType` extendido y test renombrado a `MailNotifierTest` con 6 casos verdes.
-- ✅ Verificación — `compile` verde y `mvn ... -Dtest=MailNotifierTest test` verde el 2026-05-20.
-
-**Siguiente para continuar — Lote C (Login flow):**
-
-- ☐ **T3.1** — `auth/repository/UserRepository.java`: agregar `Optional<User> findByEmailIgnoreCase(String)`.
-- ☐ **T3.2** — `auth/ratelimit/LoginAttemptTracker.java`.
-- ☐ **T3.3** — `auth/session/{TempSessionManager, TempSessionData, OtpGenerator}.java`.
-- ☐ **T3.4–T3.8** — DTOs/excepciones/handlers, `LoginService`, `LoginController`, `SecurityConfig permitAll`.
-
-**Commit recomendado para Lote B** (no autónomo — lo firma el humano):
-```
-feat(notification): agrega emails MFA de OTP y bloqueo
-
-Extiende NotificationService con emails OTP y bloqueo de cuenta mediante
-MailNotifier, templates Thymeleaf y eventos de auditoría de fallo.
-
-Renombra WelcomeEmailDispatcher a MailNotifier conservando el comportamiento
-del email de bienvenida de HU-F01.
-
-refs HU-F02 HU-F03 specs/HU-F02-F03-login-mfa/SPEC.md
-
-Co-authored-by: Codex <noreply@openai.com>
-```
+**Deuda nueva identificada durante el bundle (registrada en tasks.md):**
+- Mini-HU `HU-F0X-token-rotation-logout`: `/refresh` con rotación, `/logout` con blacklist, cookie HttpOnly refresh, `useLogout`, single-flight refresh en jwtInterceptor. Diferida por D18.
+- Limpiar `JWT_REFRESH_SECRET` de `.env.example` (no se usa — refresh token será opaco, no JWT, decisión D2).
+- (Opcional) Refactor `JwtService` para inyectar `Clock` y poder testear expiración sin TTL negativo.
 
 ---
 

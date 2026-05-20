@@ -28,26 +28,28 @@ Leyenda: ☐ pendiente · ◐ en progreso · ☑ hecho · ✗ cancelado/diferido
 - ☑ **T2.6** `audit/AuditEventType.java` MODIFICADO: + `OTP_EMAIL_FAILED, ACCOUNT_LOCKED_EMAIL_FAILED` (paralelo a `WELCOME_EMAIL_FAILED`).
 - ☑ **T2.7** `unit/notification/WelcomeEmailDispatcherTest.java` → RENAME a `MailNotifierTest.java`, agregar tests para los 3 métodos (welcome sigue verde + 2 nuevos happy/failure). **← Lote B verde** (`compile` + `-Dtest=MailNotifierTest test` verdes 2026-05-20).
 
-## Lote C — Login flow
+## Lote C — Login flow ✅ (cerrado 2026-05-20, commit `a55c553`)
 
-- ☐ **T3.1** `auth/repository/UserRepository.java` MODIFICADO: + `Optional<User> findByEmailIgnoreCase(String)`.
-- ☐ **T3.2** `auth/ratelimit/LoginAttemptTracker.java` — encapsula `login:attempts:{userId}` (INCR + TTL 1h) y `lockout:{userId}` (SET + TTL 15 min). Métodos: `recordFailed(userId) → int (newCount)`, `isLocked(userId) → boolean`, `lockoutSecondsRemaining(userId) → long`, `reset(userId)`, `lock(userId)`.
-- ☐ **T3.3** `auth/session/{TempSessionManager, TempSessionData, OtpGenerator}.java`. `TempSessionData` record `(String userId, String email, String role, Instant createdAt)`. `OtpGenerator.generate() → String` (6 dígitos, SecureRandom). `OtpGenerator.matches(provided, stored)` con `MessageDigest.isEqual`. `TempSessionManager` SET/GET/DELETE de `temp-session:{id}` + `otp:{id}` + counters.
-- ☐ **T3.4** `auth/dto/{LoginRequest, LoginResponse, UserSummary}.java`. LoginRequest con `@NotBlank/@Email`; LoginResponse `(String tempSessionId, int expiresInSeconds)`.
-- ☐ **T3.5** `auth/exception/{InvalidCredentialsException, AccountLockedException, AccountNotActiveException}.java` + handlers en `GlobalExceptionHandler` (mapean 401 `INVALID_CREDENTIALS`, 423 `ACCOUNT_LOCKED` con `lockoutSecondsRemaining`, 403 `ACCOUNT_NOT_ACTIVE`).
-- ☐ **T3.6** `auth/service/LoginService.java` — todo spec §5.1 paso 1-16. `@Transactional(readOnly=true)` para el `findByEmailIgnoreCase`. Emite `LOGIN_ATTEMPT` (ALLOWED/DENIED) + `ACCOUNT_LOCKED` cuando aplica. Dispara `Notifier.sendOtpEmail` asíncrono. Captura `DataAccessException` → audit + relanza (mismo patrón HU-F01).
-- ☐ **T3.7** `auth/controller/LoginController.java` — `POST /api/v1/auth/login` con `@Valid` + OpenAPI annotations (200/400/401/403/423/500).
-- ☐ **T3.8** `config/SecurityConfig.java` MODIFICADO: + `permitAll` para `POST /api/v1/auth/login`. **← HITO 2** (manual: `curl POST /login` con creds válidas devuelve `{tempSessionId, 300}` + OTP en MailHog).
+- ☑ **T3.1** `auth/repository/UserRepository.java` MODIFICADO: + `Optional<User> findByEmailIgnoreCase(String)` sobre el índice funcional `idx_users_email_lower`.
+- ☑ **T3.2** `auth/ratelimit/LoginAttemptTracker.java` — encapsula `login:attempts:{userId}` (INCR + TTL 1h) y `lockout:{userId}` (SET + TTL 15 min). Métodos: `recordFailed`, `isLocked`, `lockoutSecondsRemaining`, `reset`, `lock`.
+- ☑ **T3.3** `auth/session/{TempSessionManager, TempSessionData, OtpGenerator}.java`. `TempSessionData` record `(userId, email, role, createdAt)`. `OtpGenerator.generate()` 6 dígitos SecureRandom + `matches` timing-safe (`MessageDigest.isEqual`). `TempSessionManager` con API completa `createSession/getSession/getOtp/replaceOtp/invalidate` (deja Lote D limpio).
+- ☑ **T3.4** `auth/dto/{LoginRequest, LoginResponse, UserSummary}.java`. LoginRequest con `@NotBlank` + `@Pattern` admite vacío (no solapa con VALIDATION_REQUIRED, mismo truco HU-F01).
+- ☑ **T3.5** `auth/exception/{InvalidCredentialsException, AccountLockedException, AccountNotActiveException}.java` + 3 handlers en `GlobalExceptionHandler` (401 INVALID_CREDENTIALS, 423 ACCOUNT_LOCKED con header `Retry-After` y mensaje "Intenta de nuevo en X minutos", 403 ACCOUNT_NOT_ACTIVE).
+- ☑ **T3.6** `auth/service/LoginService.java` — flujo spec §5.1 pasos 1-16 con orden lookup → ACTIVE → lockout → password. Audit LOGIN_ATTEMPT(ALLOWED/DENIED) con `attemptedEmail` + `reason`; ACCOUNT_LOCKED al 3er fallo con `lockDurationSeconds=900`. `DataAccessException` audita TECHNICAL_ERROR y relanza (mismo patrón RegisterService).
+- ☑ **T3.7** `auth/controller/LoginController.java` — `POST /api/v1/auth/login` con `@Valid` + OpenAPI 200/400/401/403/423/500.
+- ☑ **T3.8** `config/SecurityConfig.java` MODIFICADO: + `permitAll` para login. **HITO 2 ✅** (`mvn clean compile` verde 2026-05-20, 57 source files).
+- ☑ **AuditEventType.java** — extendido con `LOGIN_ATTEMPT` y `ACCOUNT_LOCKED`.
 
-## Lote D — MFA flow (verify + resend + emisión de access token)
+## Lote D — MFA flow ✅ (cerrado 2026-05-20)
 
-- ☐ **T4.1** `auth/ratelimit/MfaAttemptTracker.java` — encapsula `mfa:attempts:{tempSessionId}`, `mfa:resends:{tempSessionId}`, `mfa:resend-cooldown:{tempSessionId}`. Métodos: `recordFailed(tempSessionId) → int`, `recordResend(tempSessionId) → int`, `isOnCooldown(tempSessionId) → boolean`, `cooldownSecondsRemaining(tempSessionId) → long`.
-- ☐ **T4.2** `auth/security/TokenIssuer.java` — método único `issueAccessToken(userId, role) → String` que delega en `JwtService`. (D18: solo access; no refresh).
-- ☐ **T4.3** `auth/dto/{MfaVerifyRequest, MfaVerifyResponse, MfaResendRequest, MfaResendResponse}.java`. `MfaVerifyRequest` con `@Pattern("^\\d{6}$")` para code, message `VALIDATION_INVALID_OTP`. `MfaVerifyResponse(String accessToken, int expiresIn, UserSummary user)`.
-- ☐ **T4.4** `auth/exception/{MfaInvalidCodeException, MfaCodeExpiredException, MfaSessionInvalidatedException, TempSessionInvalidException, ResendCooldownActiveException, MaxResendsExceededException}.java` + handlers (400 `MFA_INVALID_CODE`, 400 `MFA_CODE_EXPIRED`, 403 `MFA_SESSION_INVALIDATED`, 401 `TEMP_SESSION_INVALID`, 429 `RESEND_COOLDOWN_ACTIVE` con `Retry-After` header, 429 `MAX_RESENDS_EXCEEDED`).
-- ☐ **T4.5** `auth/service/MfaService.java` — `verify(req)` (spec §5.1 paso 18-31) y `resend(req)` (spec §5.2.3). Eventos: `MFA_VERIFIED`, `MFA_FAILED`, `MFA_RESEND_REQUESTED`, `MFA_SESSION_INVALIDATED`.
-- ☐ **T4.6** `auth/controller/MfaController.java` — `POST /api/v1/auth/mfa/verify` y `POST /api/v1/auth/mfa/resend` con OpenAPI.
-- ☐ **T4.7** `config/SecurityConfig.java` MODIFICADO: + `permitAll` para los dos endpoints. **← HITO 3** (manual: flujo completo `curl login → MFA verify → JWT válido`).
+- ☑ **T4.1** `auth/ratelimit/MfaAttemptTracker.java` — wrapper de `mfa:attempts:`, `mfa:resends:` (inicializadas por TempSessionManager, INCR aquí) y `mfa:resend-cooldown:` con TTL 30s. Métodos: `recordFailed`, `recordResend`, `getResendCount`, `isOnCooldown`, `cooldownSecondsRemaining`, `setCooldown`.
+- ☑ **T4.2** `auth/security/TokenIssuer.java` — record `IssuedAccessToken(accessToken, expiresInSeconds)` empaquetando la llamada a `JwtService.generateAccessToken` + `accessTokenTtl()`.
+- ☑ **T4.3** `auth/dto/{MfaVerifyRequest, MfaVerifyResponse, MfaResendRequest, MfaResendResponse}.java`. Patrón OTP `^(|\d{6})$` admite vacío para no solapar con VALIDATION_REQUIRED.
+- ☑ **T4.4** 6 excepciones nuevas + handlers (400 MFA_INVALID_CODE con "Intentos restantes: N", 400 MFA_CODE_EXPIRED, 403 MFA_SESSION_INVALIDATED, 401 TEMP_SESSION_INVALID, 429 RESEND_COOLDOWN_ACTIVE con `Retry-After`, 429 MAX_RESENDS_EXCEEDED).
+- ☑ **T4.5** `auth/service/MfaService.java` — `verify` (spec §5.1 paso 18-31, sin cookie por D18) y `resend` (§5.2.3). Audits MFA_VERIFIED con `tempSessionDurationMs`, MFA_FAILED con `reason` + `attemptNumber`, MFA_RESEND_REQUESTED con `resendNumber`, MFA_SESSION_INVALIDATED con `reason` (MAX_ATTEMPTS / MAX_RESENDS).
+- ☑ **T4.6** `auth/controller/MfaController.java` — `POST /api/v1/auth/mfa/verify` y `/mfa/resend` en `/api/v1/auth/mfa` con OpenAPI completo.
+- ☑ **T4.7** `config/SecurityConfig.java` MODIFICADO: + `permitAll` para `/mfa/verify` y `/mfa/resend`. **HITO 3 ✅** (`mvn clean compile` verde 2026-05-20, 71 source files).
+- ☑ **AuditEventType.java** — extendido con `MFA_VERIFIED`, `MFA_FAILED`, `MFA_RESEND_REQUESTED`, `MFA_SESSION_INVALIDATED`.
 
 ## ✗ Lote E — Refresh + Logout — **DIFERIDO POR D18** (post-MVP)
 
@@ -57,45 +59,51 @@ No se implementa en este bundle. Mini-HU futura `HU-F0X-token-rotation-logout` c
 - Cookie HttpOnly refresh + rotación + revoked:{jti}
 - Frontend: `useLogout` con backend call + jwtInterceptor con single-flight refresh
 
-## Lote F — Tests backend + CI Redis
+## Lote F — Tests backend + CI Redis ✅ (cerrado 2026-05-20)
 
-- ☐ **T5.1** Unit: `JwtServiceTest` (emisión, validación, expiración, firma alterada).
-- ☐ **T5.2** Unit: `OtpGeneratorTest` (formato, timing-safe).
-- ☐ **T5.3** Unit: `LoginAttemptTrackerTest` + `MfaAttemptTrackerTest` (con `StringRedisTemplate` mockeado o un fake in-memory).
-- ☐ **T5.4** Unit: `LoginServiceTest` (happy, INVALID_CREDENTIALS, ACCOUNT_LOCKED, ACCOUNT_NOT_ACTIVE, 3er intento setea lockout, reset en éxito).
-- ☐ **T5.5** Unit: `MfaServiceTest` (verify happy, INVALID_CODE incrementa contador, CODE_EXPIRED, 3er fail invalida sesión, resend happy + cooldown + max).
-- ☐ **T5.6** Unit: `TokenIssuerTest` (delegación correcta a JwtService).
-- ☐ **T5.7** IT: `AuthFlowIT` — Postgres + Redis reales del compose, perfil `test`. Flujo: registrar usuario (helper) → POST `/login` → capturar OTP (lee directamente de Redis por simplicidad) → POST `/mfa/verify` → recibir JWT → request a endpoint protegido stub con `Authorization: Bearer` → 200 OK. Verifica audit events: `LOGIN_ATTEMPT(ALLOWED)`, `MFA_VERIFIED`.
-- ☐ **T5.8** IT: `LockoutFlowIT` — 3 logins fallidos → 4° login devuelve 423 → email `account-locked` enviado (verifica `@MockBean Notifier`). Verifica audit `ACCOUNT_LOCKED`.
-- ☐ **T5.9** IT: `OpenApiContractIT` MODIFICADO — agrega los 3 endpoints nuevos a la verificación de `/v3/api-docs`.
-- ☐ **T5.10** `.github/workflows/ci.yml` MODIFICADO: + `service: redis` (redis:7-alpine puerto 6379:6379 + healthcheck `redis-cli ping`) + env `JWT_SECRET` generado al vuelo (`openssl rand -base64 64`). **← HITO 4** (`mvn verify` verde en CI).
+- ☑ **T5.1** Unit `JwtServiceTest` — 7 tests (emisión, validación, TTL, secret <32 bytes, firma alterada, token malformado). TTL expirado se prueba con `new JwtService(SECRET, -1)` (evita Thread.sleep).
+- ☑ **T5.2** Unit `OtpGeneratorTest` — 6 tests (formato, distribución, matches timing-safe, null inputs).
+- ☑ **T5.3** Unit `LoginAttemptTrackerTest` (8) + `MfaAttemptTrackerTest` (8) — mocks de `StringRedisTemplate` + `ValueOperations`.
+- ☑ **T5.4** Unit `LoginServiceTest` — 7 tests cubriendo happy + 4 ramas DENIED + 3er fallo lockea + envía email + technical error.
+- ☑ **T5.5** Unit `MfaServiceTest` — 9 tests (verify happy/SESSION_EXPIRED/CODE_EXPIRED/INVALID_CODE/3er fail invalida; resend happy/sin sesión/cooldown/max).
+- ☑ **T5.6** Unit `TokenIssuerTest` — 1 test (delegación correcta).
+- ☑ **T5.7** IT `AuthFlowIT` — 3 tests con Postgres + Redis reales. Registra usuario → POST `/login` → lee OTP de Redis vía `StringRedisTemplate` → POST `/mfa/verify` → JWT válido (validado con `jwtService.validate(token)`). Verifica audit LOGIN_ATTEMPT(ALLOWED) y MFA_VERIFIED.
+- ☑ **T5.8** IT `LockoutFlowIT` — 3 logins fallidos → 4to login 423 → email account-locked enviado + audit ACCOUNT_LOCKED. `@MockBean Notifier`.
+- ☑ **T5.9** IT `OpenApiContractIT` MODIFICADO — + 3 tests para `/login`, `/mfa/verify`, `/mfa/resend`. Removida exclusión de `RedisAutoConfiguration` (necesaria por los beans nuevos).
+- ☑ **T5.10** `.github/workflows/ci.yml` MODIFICADO: + `service: redis:7-alpine` con healthcheck `redis-cli ping`. JWT_SECRET NO se inyecta como env (decisión: `application-test.yml` hardcodea el secret de testing — mata la necesidad de `openssl rand`). **HITO 4 ✅** (`mvn verify` BUILD SUCCESS 2026-05-20, 90 tests verdes: 78 unit + 12 IT).
+- ☑ **Fixes colaterales descubiertos al correr `mvn verify` completo**:
+  - `JwtService.java` placeholder `${JWT_SECRET:}` (default vacío en el inner) para que `BloomtradeApplicationTests.contextLoads` no falle por placeholder no resuelto.
+  - `RegisterFlowIT.java` quita exclusión de Redis: los beans nuevos de auth requieren `StringRedisTemplate` desde el context.
 
-## Lote G — Frontend infra (AuthContext + interceptor + ProtectedRoute)
+## Lote G — Frontend infra ✅ (cerrado 2026-05-20)
 
-- ☐ **T6.1** `src/types/api.ts` MODIFICADO: + `LoginRequest`, `LoginResponse`, `MfaVerifyRequest`, `MfaVerifyResponse`, `MfaResendRequest`, `MfaResendResponse`, `UserSummary`.
-- ☐ **T6.2** `src/lib/messages.es.ts` MODIFICADO: + todos los códigos nuevos de D9 con mensajes ES.
-- ☐ **T6.3** `src/features/auth/context/AuthContext.tsx` — `AuthProvider` + `useAuth` hook. State: `{user, accessToken, isAuthenticated}` en memoria (NO localStorage). Métodos: `setSession(token, user)`, `clearSession()`. Sin lógica de refresh (D18).
-- ☐ **T6.4** `src/lib/apiClient.ts` MODIFICADO: + `jwtInterceptor` con dos partes:
-  - request interceptor: si hay `accessToken` (vía un getter inyectado desde AuthProvider), añadir `Authorization: Bearer <token>`.
-  - response interceptor: si 401 con `error === "TOKEN_EXPIRED"` o `"TOKEN_INVALID"`, limpia AuthContext y `window.location.assign('/login')`. (D18 simplificado: sin refresh transparente).
-- ☐ **T6.5** `src/components/ProtectedRoute.tsx` — wrapper: si `!isAuthenticated` → `<Navigate to="/login" replace />`.
-- ☐ **T6.6** `src/features/auth/hooks/useSession.ts` → BORRAR (lo reemplaza `useAuth`).
-- ☐ **T6.7** `src/pages/RegisterPage.tsx` MODIFICADO: cambiar `useSession` → `useAuth`. Misma lógica del guard.
-- ☐ **T6.8** `src/main.tsx` MODIFICADO: envolver `<App />` con `<AuthProvider>` dentro del `<QueryClientProvider>`.
+- ☑ **T6.1** `src/types/api.ts` MODIFICADO: + 7 tipos nuevos (LoginRequest/Response, MfaVerify/Resend Request/Response, UserSummary). Reorganizado por HU.
+- ☑ **T6.2** `src/lib/messages.es.ts` MODIFICADO: + 11 códigos nuevos de auth + 1 de token (INVALID_CREDENTIALS, ACCOUNT_LOCKED, MFA_INVALID_CODE, TEMP_SESSION_INVALID, RESEND_COOLDOWN_ACTIVE, MAX_RESENDS_EXCEEDED, TOKEN_EXPIRED, etc.).
+- ☑ **T6.3** `src/features/auth/context/AuthContext.tsx` — `AuthProvider` + `useAuth`. State `{user, accessToken, isAuthenticated, setSession, clearSession}` en memoria. `useEffect` re-configura el interceptor del apiClient cuando cambia el token.
+- ☑ **T6.4** `src/lib/apiClient.ts` MODIFICADO: + request interceptor (añade Bearer) + response interceptor (401 + TOKEN_EXPIRED/TOKEN_INVALID/TOKEN_REVOKED → `unauthorizedHandler`). API pública: `configureAuthInterceptor({getAccessToken, onUnauthorized})`.
+- ☑ **T6.5** `src/components/ProtectedRoute.tsx` — Navigate a `/login` con `replace` + `state.from` (deep-link recovery futuro, costo cero).
+- ☑ **T6.6** `src/features/auth/hooks/useSession.ts` — BORRADO. Promesa Q2 del plan HU-F01 cumplida.
+- ☑ **T6.7** `src/pages/RegisterPage.tsx` MODIFICADO: `useSession().token` → `useAuth().isAuthenticated`.
+- ☑ **T6.8** `src/main.tsx` MODIFICADO: `<AuthProvider>` envuelve `<App />` **dentro** de `<BrowserRouter>` (necesario para `useNavigate`) y dentro de `<QueryClientProvider>`.
+- ☑ Verificación: `tsc --noEmit` verde, `vite build` verde (159 modules, 1.83s), vitest verde (9 tests existentes de HU-F01).
+- ☑ Extensión adicional: `lib/errorParser.ts` agrega `retryAfter?: number` parseado del header `Retry-After` (Lote H lo consume).
 
-## Lote H — Frontend pages (Login + MFA + Dashboard placeholder)
+## Lote H — Frontend pages ✅ (cerrado 2026-05-20, HITO 5 verde)
 
-- ☐ **T7.1** `src/features/auth/schemas/{login.ts, mfa.ts}` — zod schemas. login: email + password required. mfa: tempSessionId UUID + code 6 dígitos.
-- ☐ **T7.2** `src/features/auth/hooks/{useLogin, useMFAVerify, useMFAResend}.ts` — React Query mutations contra `apiClient`. `useMFAVerify` on-success llama `setSession(...)`.
-- ☐ **T7.3** `src/components/Countdown.tsx` — recibe `expiresAt: Date`, renderiza "MM:SS" con `setInterval` cada segundo. Cleanup en unmount.
-- ☐ **T7.4** `src/components/OTPInput.tsx` — 6 inputs `type=text inputMode=numeric maxLength=1`. Auto-focus al siguiente al tipear. Paste de 6 dígitos auto-llena todos. Emite `onChange(string)` cuando los 6 están completos.
-- ☐ **T7.5** `src/features/auth/components/ResendButton.tsx` — botón con estado `idle / cooldown(secs) / disabled-maxed`. Llama `useMFAResend`; 429 RESEND_COOLDOWN_ACTIVE setea cooldown desde `Retry-After`; 429 MAX_RESENDS_EXCEEDED setea disabled-maxed.
-- ☐ **T7.6** `src/features/auth/components/LoginForm.tsx` — RHF + zod. Submit → `useLogin.mutate({email, password})`. Banner para 401/403/423/500. Success: navega `/mfa-verify` con `{tempSessionId, email, expiresAt}` en `location.state`.
-- ☐ **T7.7** `src/pages/LoginPage.tsx` — REEMPLAZA el stub HU-F01. Wrapper del `LoginForm`. Guard: si `isAuthenticated`, redirect `/dashboard`.
-- ☐ **T7.8** `src/pages/MFAVerifyPage.tsx` — recibe `tempSessionId/email/expiresAt` de `location.state`; si falta, redirect `/login`. Renderiza `OTPInput` + `Countdown` + `ResendButton` + botón "Verificar". Llama `useMFAVerify`; success → `setSession(accessToken, user)` → navega `/dashboard`. Errores: MFA_INVALID_CODE muestra "Intentos restantes: N" (deriva del response), MFA_CODE_EXPIRED prompt resend, MFA_SESSION_INVALIDATED banner + redirect `/login` tras 3s.
-- ☐ **T7.9** `src/components/AppHeader.tsx` — muestra `user.nombreCompleto` + botón "Cerrar sesión" que llama `clearSession()` + `navigate('/login')`. **No llama backend** (D18 soft logout).
-- ☐ **T7.10** `src/pages/DashboardPage.tsx` — placeholder: `<AppHeader />` + `<h1>Bienvenido, {user.nombreCompleto}</h1>` + un texto "Próximamente: trading, portafolio, dashboard de mercado".
-- ☐ **T7.11** `src/App.tsx` MODIFICADO: agrega rutas `/login`, `/mfa-verify`, `/dashboard` (esta última envuelta en `<ProtectedRoute>`). `*` redirige a `/login` si no autenticado o `/dashboard` si sí. **← HITO 5** (E2E manual: registro → login → MFA → dashboard).
+- ☑ **T7.1** `src/features/auth/schemas/{login.ts, mfa.ts}` — zod schemas con códigos SCREAMING_SNAKE como `message`.
+- ☑ **T7.2** `src/features/auth/hooks/{useLogin, useMFAVerify, useMFAResend}.ts` — React Query mutations con `parseError`.
+- ☑ **T7.3** `src/components/Countdown.tsx` — MM:SS con `setInterval`; `onExpire` one-shot vía flag local.
+- ☑ **T7.4** `src/components/OTPInput.tsx` — 6 inputs `inputMode=numeric`, auto-focus al siguiente, paste de 6 dígitos, navegación Backspace/flechas, `value: string` canónico de 0-6 dígitos.
+- ☑ **T7.5** `src/features/auth/components/ResendButton.tsx` — máquina `idle/cooldown/maxed`. Cooldown desde `retryAfter` del ParsedError; default 30s post-success.
+- ☑ **T7.6** `src/features/auth/components/LoginForm.tsx` — RHF + zod. On success → navega `/mfa-verify` con `state = {tempSessionId, email, expiresAt: ISO}`.
+- ☑ **T7.7** `src/pages/LoginPage.tsx` — REEMPLAZA stub HU-F01. Guard si ya autenticado.
+- ☑ **T7.8** `src/pages/MFAVerifyPage.tsx` — guard de `location.state`; sin state → `/login`. Maneja MFA_INVALID_CODE / MFA_CODE_EXPIRED / MFA_SESSION_INVALIDATED (banner + redirect tras 3s) / TEMP_SESSION_INVALID. Email enmascarado para presentación.
+- ☑ **T7.9** `src/components/AppHeader.tsx` — `nombreCompleto` + chip de rol + botón "Cerrar sesión" (D18 soft).
+- ☑ **T7.10** `src/pages/DashboardPage.tsx` — placeholder con AppHeader + bienvenida.
+- ☑ **T7.11** `src/App.tsx` MODIFICADO: rutas `/login`, `/mfa-verify`, `/dashboard` (ProtectedRoute); catch-all redirige según `isAuthenticated`. **HITO 5 ✅** E2E manual verde 2026-05-20.
+- ☑ **Fixes de infra descubiertos al ejecutar HITO 5 en docker (latentes desde HU-F01/Lote A)**:
+  - `docker-compose.yml` — agrega `JWT_SECRET` (con `:?` que aborta si vacío) + `JWT_ACCESS_TTL_MINUTES` al servicio `backend`. Sin esto el JwtService falla por `>=32 bytes` y el container hace restart loop.
+  - `frontend/nginx.conf` — quita trailing slash de `proxy_pass http://backend:8080/`. Con `/` final nginx strippea el prefijo `/api/` y Spring Security devuelve 403 sin body (el frontend lo veía como NETWORK_ERROR).
 
 ## Lote I — Tests frontend + cierre
 
