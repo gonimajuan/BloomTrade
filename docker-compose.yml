@@ -154,6 +154,8 @@ services:
       SPRING_DATA_REDIS_PORT: 6379
       LOGSTASH_HOST: logstash
       LOGSTASH_PORT: 5044
+      SPRING_MAIL_HOST: mailhog
+      SPRING_MAIL_PORT: 1025
     ports:
       - "8080:8080"
     depends_on:
@@ -163,6 +165,8 @@ services:
         condition: service_healthy
       logstash:
         condition: service_healthy
+      mailhog:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/actuator/health | grep -q 'UP'"]
       interval: 15s

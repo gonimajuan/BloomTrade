@@ -15,6 +15,23 @@ jobs:
   backend:
     name: Backend (build + test + sonar)
     runs-on: ubuntu-latest
+    # Postgres como service: consecuencia del pivot D16 — el perfil 'test'
+    # apunta a localhost:5433/bloomtrade_test (ver backend/src/main/resources/
+    # application-test.yml). El smoke y los IT requieren la BD lista al arrancar.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bloomtrade
+          POSTGRES_PASSWORD: changeme
+          POSTGRES_DB: bloomtrade_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U bloomtrade -d bloomtrade_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -1,11 +1,22 @@
-# BloomTrade — Perfil test
-# Testcontainers provee Postgres por test. URL JDBC mágica de Testcontainers:
-# 'jdbc:tc:postgresql:...' arranca un contenedor automáticamente al primer connect.
+# BloomTrade — Perfil 'test'
+#
+# Diseño: los tests (smoke + IT) corren contra el Postgres del docker-compose ya levantado
+# en `localhost:5433`, sobre una BD separada `bloomtrade_test` para no contaminar la de dev.
+# Se eligió este camino sobre Testcontainers por incompatibilidad observada entre docker-java
+# y el pipe `dockerDesktopLinuxEngine` de Docker Desktop reciente en Windows (HU-F01 Día 1).
+# Las deps de Testcontainers quedan en pom.xml para retomar el camino cuando se resuelva.
+#
+# Pre-requisito (una vez): `docker compose up -d postgres` y crear la BD test:
+#   docker exec bloomtrade-postgres psql -U bloomtrade -d bloomtrade -c "CREATE DATABASE bloomtrade_test;"
+#
+# Para CI: el workflow .github/workflows/ci.yml debe levantar un service postgres equivalente.
 
 spring:
   datasource:
-    url: jdbc:tc:postgresql:16-alpine:///bloomtrade_test
-    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+    url: jdbc:postgresql://localhost:5433/bloomtrade_test
+    username: ${POSTGRES_USER:bloomtrade}
+    password: ${POSTGRES_PASSWORD:changeme}
+    driver-class-name: org.postgresql.Driver
   data:
     redis:
       host: localhost
@@ -14,7 +25,13 @@ spring:
     enabled: true
     clean-disabled: false
 
+management:
+  health:
+    # Evita el choque conocido @MockBean JavaMailSender vs MailHealthContributor
+    # ("Beans must not be empty") en los ITs que mockean el mailSender.
+    mail:
+      enabled: false
+
 logging:
   level:
     co.edu.unbosque.bloomtrade: DEBUG
-    org.testcontainers: INFO
