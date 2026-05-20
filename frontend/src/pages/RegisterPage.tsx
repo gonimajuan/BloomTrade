@@ -1,11 +1,11 @@
 import { Link, Navigate } from 'react-router-dom';
 import { RegisterForm } from '@/features/auth/components/RegisterForm';
-import { useSession } from '@/features/auth/hooks/useSession';
+import { useAuth } from '@/features/auth/context/AuthContext';
 
-/** Página /register (spec HU-F01 §12.1). Guard de sesión inerte hasta HU-F02. */
+/** Página /register (spec HU-F01 §12.1). Guard de sesión real desde HU-F02 (Lote G). */
 export function RegisterPage() {
-  const { token } = useSession();
-  if (token) {
+  const { isAuthenticated } = useAuth();
+  if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
   }
 
