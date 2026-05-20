@@ -38,11 +38,14 @@ public class SecurityConfig {
                     "/v3/api-docs",
                     "/v3/api-docs/**"
                 ).permitAll()
-                // HU-F01 registro + HU-F02 login (paso 1 del flujo MFA) son públicos por spec.
+                // HU-F01 registro + HU-F02 todo el flujo MFA (login + verify + resend) son
+                // públicos por spec — el sesion-id temporal autoriza los pasos 2 y 3, no el JWT.
                 .requestMatchers(
                         HttpMethod.POST,
                         "/api/v1/auth/register",
-                        "/api/v1/auth/login")
+                        "/api/v1/auth/login",
+                        "/api/v1/auth/mfa/verify",
+                        "/api/v1/auth/mfa/resend")
                 .permitAll()
                 .anyRequest().authenticated()
             )

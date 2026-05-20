@@ -33,5 +33,27 @@ public enum AuditEventType {
      * HU-F02 §9.1; detail incluye {@code reason="MAX_LOGIN_ATTEMPTS"} y
      * {@code lockDurationSeconds=900}.
      */
-    ACCOUNT_LOCKED
+    ACCOUNT_LOCKED,
+
+    /**
+     * OTP validado correctamente; el sistema emitió el access token (spec HU-F02 §9.1). detail
+     * lleva {@code tempSessionDurationMs} para medir el tiempo entre login y verify.
+     */
+    MFA_VERIFIED,
+
+    /**
+     * OTP incorrecto, expirado, o sesión temporal inexistente (spec HU-F02 §9.1). detail lleva
+     * {@code reason} en {@code INVALID_CODE | CODE_EXPIRED | SESSION_EXPIRED} y
+     * {@code attemptNumber} cuando aplica.
+     */
+    MFA_FAILED,
+
+    /** Nuevo OTP solicitado vía {@code /mfa/resend} (spec HU-F02 §9.1). */
+    MFA_RESEND_REQUESTED,
+
+    /**
+     * Sesión temporal invalidada por 3 fallos de OTP o 3 reenvíos agotados (spec HU-F02 §9.1).
+     * detail lleva {@code reason} en {@code MAX_ATTEMPTS | MAX_RESENDS}.
+     */
+    MFA_SESSION_INVALIDATED
 }
