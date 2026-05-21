@@ -10,10 +10,10 @@
 | Sprint | 1 |
 | Prioridad MoSCoW | Must |
 | Estado | Ready |
-| Autor | *[Tu nombre]* |
+| Autor | Juan |
 | Fecha creación | 2026-05-08 |
-| Última actualización | 2026-05-08 |
-| Versión spec | 1.0 |
+| Última actualización | 2026-05-20 |
+| Versión spec | 1.1 |
 | Día estimado del ROADMAP | Día 3 |
 
 ---
@@ -48,7 +48,7 @@ Es la primera feature del MVP que **ejercita autenticación real con JWT**. Toda
 
 - **HU-F01 Registrarse** — el usuario debe existir con todos los campos base
 - **HU-F02 + HU-F03 Login + MFA** — el usuario debe poder autenticarse y obtener JWT
-- **ProtectedRoute, AuthContext, jwtInterceptor** — implementados en HU-F02-F03
+- **ProtectedRoute, AuthContext, jwtInterceptor** — implementados en HU-F02-F03 (versión simplificada por D18: el interceptor sobre 401 limpia la sesión y redirige a `/login`; **no hay refresh transparente** — diferido a mini-HU post-MVP `HU-F0X-token-rotation-logout`)
 
 ### Features que dependen de esta
 
@@ -75,8 +75,9 @@ Es la primera feature del MVP que **ejercita autenticación real con JWT**. Toda
 
 ### Datos requeridos en el sistema
 
-- Configuración Spring Security activa con filtro JWT que valida `Authorization: Bearer {token}`
-- Bean `IAuthentication` de AuthService (introducido en HU-F02-F03) registrado en el contexto Spring
+- Configuración Spring Security activa con `JwtAuthenticationFilter` (introducido en HU-F02-F03) en la cadena de filtros, validando `Authorization: Bearer {token}` y poblando el `SecurityContextHolder` con un `AuthenticatedUser` cuyo `principal` contiene el `userId` del claim `sub`
+- `JwtService` (HU-F02-F03) disponible como bean para parseo y verificación HS256
+- `Auditor` (módulo AuditService) disponible como bean para emisión de eventos
 - Catálogo de 25 tickers válidos disponible como constante en código (definido en `ARCHITECTURE.md` §1)
 
 ---
@@ -88,10 +89,10 @@ Es la primera feature del MVP que **ejercita autenticación real con JWT**. Toda
 #### Paso 1: Consulta del perfil
 
 1. Usuario autenticado navega a `/profile` en el frontend
-2. Frontend envía `GET /api/v1/me` con header `Authorization: Bearer {accessToken}` (vía jwtInterceptor)
-3. Backend valida el JWT vía `IAuthentication.validateToken()`: firma HS256, `jti` no revocado, `exp` futura
-4. Backend extrae `userId` del claim `sub` del JWT
-5. Backend consulta `app.users` por ese `userId`
+2. Frontend envía `GET /api/v1/me` con header `Authorization: Bearer {accessToken}` (inyectado por el `jwtInterceptor` de axios)
+3. `JwtAuthenticationFilter` (HU-F02-F03) valida el JWT: firma HS256 contra `JWT_SECRET`, `exp` futura, claim `sub` presente. Si falla, devuelve 401 antes de llegar al controller. Si pasa, pobla el `SecurityContextHolder` con `AuthenticatedUser{userId, role}`
+4. `MeController` obtiene el `userId` del `SecurityContextHolder` (no del path ni del body — el principal es la única fuente de identidad)
+5. `ProfileService` consulta `app.users` por ese `userId` vía `UserRepository`
 6. Backend retorna 200 con el perfil completo (campos editables + read-only)
 7. Frontend mapea la respuesta a estado del formulario y muestra la página
 
@@ -102,7 +103,7 @@ Es la primera feature del MVP que **ejercita autenticación real con JWT**. Toda
 10. Usuario presiona "Guardar cambios"
 11. Frontend valida campos en cliente con Zod (mismos rules que server-side)
 12. Frontend envía `PATCH /api/v1/me` con SOLO los campos modificados (no envía campos sin cambios)
-13. Backend valida el JWT (igual que en GET)
+13. `JwtAuthenticationFilter` valida el JWT (igual que en GET) y pobla el `SecurityContextHolder`
 14. Backend valida la estructura del request body (Bean Validation): cada campo opcional, si está presente debe cumplir su regla
 15. Backend abre transacción
 16. Backend consulta el `User` por `userId`
@@ -162,14 +163,16 @@ Es la primera feature del MVP que **ejercita autenticación real con JWT**. Toda
 **Estado final:** Sin cambios
 **Evento de auditoría:** `ACCESS_DENIED` con `details.reason="TOKEN_EXPIRED"`
 
-> El frontend interpreta este código específico y dispara `/refresh` transparentemente vía jwtInterceptor (comportamiento definido en HU-F02-F03 spec §12).
+> **Comportamiento del frontend (D18 HU-F02):** El `jwtInterceptor` de axios intercepta el 401, limpia el `AuthContext` y redirige a `/login`. **No hay refresh transparente en el MVP** — el access token vive 15 minutos y, cuando expira, el usuario debe reautenticarse. El flujo completo de refresh/rotación queda diferido a la mini-HU `HU-F0X-token-rotation-logout`.
 
-#### 5.3.3 Access token revocado
+#### 5.3.3 Access token con firma inválida o malformado
 
-**Cuándo se dispara:** El `jti` del JWT está en `revoked:{jti}` de Redis (logout previo)
-**Respuesta:** HTTP 401 Unauthorized con código `TOKEN_REVOKED`
+**Cuándo se dispara:** El JWT no parsea, la firma HS256 no coincide con `JWT_SECRET`, o el claim `sub` no es un UUID válido
+**Respuesta:** HTTP 401 Unauthorized con código `TOKEN_INVALID`
 **Estado final:** Sin cambios
-**Evento de auditoría:** `ACCESS_DENIED` con `details.reason="TOKEN_REVOKED"`
+**Evento de auditoría:** `ACCESS_DENIED` con `details.reason="TOKEN_INVALID"`
+
+> **Decisión:** La blacklist de tokens revocados (`revoked:{jti}` en Redis) y el código `TOKEN_REVOKED` quedan diferidos junto con `/logout` a la mini-HU post-MVP `HU-F0X-token-rotation-logout`. En el MVP no existe forma de revocar un access token activo: vive sus 15 minutos hasta expirar.
 
 #### 5.3.4 Validación de campos falló
 
@@ -468,17 +471,19 @@ No aplica.
 
 | Módulo | Rol | Componentes específicos tocados |
 |---|---|---|
-| AuthService | Iniciador | `MeController`, `ProfileService`, `UserRepository`, `UserProfileMapper`, `IAuthentication` (validación de token) |
-| AuditService | Notificado | `AuditLogger` (eventos `PROFILE_UPDATED`, `NOTIFICATION_CHANNEL_CHANGED`, `ACCESS_DENIED`, `PROFILE_UPDATE_FAILED`) |
+| AuthService | Iniciador | `MeController` (nuevo), `ProfileService` (nuevo), `UserProfileMapper` (nuevo), `UserRepository` (extendido — métodos para PATCH parcial), `JwtAuthenticationFilter` + `SecurityContextHolder` (preexistentes, HU-F02-F03) |
+| AuditService | Notificado | `Auditor` (interfaz pública, HU-F01 D1) emite `PROFILE_UPDATED`, `NOTIFICATION_CHANNEL_CHANGED`, `ACCESS_DENIED`, `PROFILE_UPDATE_FAILED` |
 
 > **Nota arquitectónica:** La gestión de perfil vive dentro de AuthService porque el entity `User` y su persistencia son responsabilidad de ese módulo (definido al crear `app.users` en HU-F01). En un futuro post-MVP donde se separen los módulos en servicios independientes, una posible refactorización sería extraer un `UserManagementService` dedicado, pero para MVP mantener la cohesión en AuthService es lo más simple y correcto.
 
 ### 8.2 Interfaces consumidas
 
-| Interfaz | Módulo que la expone | Para qué se usa aquí |
+| Mecanismo / Bean | Módulo que lo expone | Para qué se usa aquí |
 |---|---|---|
-| `IAuthentication` | AuthService (introducida en HU-F02-F03 §8.3) | Validar el JWT en cada request y resolver el `userId` del usuario autenticado |
-| `IAudit` | AuditService | Emitir eventos de auditoría de cambios de perfil |
+| `JwtAuthenticationFilter` + `JwtService` + `SecurityContextHolder` | AuthService (HU-F02-F03) | Validar JWT (firma HS256 + `exp`) en cada request y resolver el `userId` del usuario autenticado vía `Authentication.getPrincipal()` |
+| `Auditor` (sin prefijo `I` por D1 HU-F01) | AuditService | Emitir eventos de auditoría de cambios de perfil |
+
+> **Nota D1:** Las interfaces inter-módulo se nombran sin prefijo `I` (decisión HU-F01 D1 — `Auditor`, `Notifier`, `BalanceInitializer`). En el SPEC v1.0 figuraban como `IAuthentication`/`IAudit`; v1.1 alinea con la decisión. Adicionalmente, en HU-F02-F03 **no se materializó una interfaz `Authentication`** sino que la validación quedó en el filtro Spring Security estándar — el SPEC v1.1 refleja esa realidad.
 
 ### 8.3 Interfaces expuestas
 
@@ -488,7 +493,7 @@ Ninguna nueva. Los endpoints son HTTP REST consumidos directamente por el fronte
 
 | Táctica | ID | Cómo se materializa en esta feature |
 |---|---|---|
-| Autorizar actores | TAC-S2 | `IAuthentication.validateToken()` garantiza que solo el usuario dueño del JWT puede modificar su perfil. No hay forma de modificar perfil ajeno desde `/me`. |
+| Autorizar actores | TAC-S2 | `JwtAuthenticationFilter` rechaza requests sin token válido; el `MeController` resuelve el `userId` exclusivamente desde el `SecurityContextHolder`, nunca desde body/query/path. No hay forma de modificar perfil ajeno desde `/me` salvo que se posea un JWT firmado válido de esa cuenta. |
 | Mantener registro de auditoría | TAC-S4 | Eventos `PROFILE_UPDATED` y `NOTIFICATION_CHANNEL_CHANGED` emitidos. Cambios en datos del usuario son trazables forensemente. |
 | Encapsular | TAC-M3 | Lógica de actualización parcial encapsulada en `ProfileService`. Catálogo de 25 tickers encapsulado en constante `AllowedTickers` reutilizable. |
 
@@ -503,7 +508,7 @@ Ninguna nueva. Los endpoints son HTTP REST consumidos directamente por el fronte
 | `PROFILE_UPDATED` | Cualquier cambio efectivo en el perfil | `{ changedFields: ["nombreCompleto", "telefono", ...] }` — solo los nombres de los campos, NO los valores (PII) |
 | `NOTIFICATION_CHANNEL_CHANGED` | Cambio específico del campo `notificationChannel` | `{ from: "EMAIL", to: "WHATSAPP" }` — sí incluye valores porque son enums no-PII |
 | `PROFILE_UPDATE_FAILED` | Error técnico durante actualización | `{ reason: "TECHNICAL_ERROR", errorClass }` |
-| `ACCESS_DENIED` | Request a `/me` sin auth válida | `{ reason: "AUTH_REQUIRED" \| "TOKEN_EXPIRED" \| "TOKEN_REVOKED" }` |
+| `ACCESS_DENIED` | Request a `/me` sin auth válida | `{ reason: "AUTH_REQUIRED" \| "TOKEN_EXPIRED" \| "TOKEN_INVALID" }` (TOKEN_REVOKED diferido junto con `/logout` — D18 HU-F02) |
 
 > **GET /me NO se audita.** El usuario consultando su propio perfil es una operación de lectura propia que generaría ruido masivo en el log de auditoría sin valor forense. Si en el futuro hay requerimiento regulatorio de auditar lecturas, se puede agregar.
 
@@ -525,6 +530,29 @@ No aplica. El perfil se lee directamente de la BD en cada request.
 No aplica. Esta feature no consume Alpaca, Polygon, Stripe ni Twilio.
 
 > **Nota importante:** Cambiar `notificationChannel` a SMS o WHATSAPP **no dispara verificación** del número (decisión registrada al inicio). El cambio se persiste y los próximos envíos de notificación irán por ese canal. Si el número es inválido o Twilio falla, eso se reflejará en futuros envíos (eventos `NOTIFICATION_FAILED` se manejarán en NotificationService cuando aplique).
+
+---
+
+## 10. Atributos de calidad aplicables
+
+### 10.1 Escenarios de calidad referenciados
+
+| ID escenario | Atributo | Cómo esta feature lo soporta |
+|---|---|---|
+| ESC-S4 | Seguridad | "Inversionista accede a módulo de auditoría → acceso denegado en <1s". El mismo mecanismo de `JwtAuthenticationFilter` + role-based access que aquí se ejercita por primera vez sobre `/me` será reutilizado por endpoints de Legal/Admin en el post-MVP. Validar este mecanismo en una ruta sin reglas RBAC complejas (solo "el dueño del token accede a su propio perfil") es el escalón necesario antes de protecciones más exigentes. |
+| TAC-S2 (sin escenario formal en `ARCHITECTURE.md` §13) | Seguridad | Autorización por identidad: el `userId` que se usa para leer/escribir el perfil viene **únicamente** del `SecurityContextHolder`, no del body/query/path. Esto cierra el vector de modificación de perfil ajeno por path-tampering. |
+| TAC-S4 | Seguridad | Eventos `PROFILE_UPDATED` y `NOTIFICATION_CHANNEL_CHANGED` indexados en ElasticSearch — los cambios de perfil son forensemente trazables. Los valores PII (nombre, teléfono) **no** se loguean; solo los nombres de los campos cambiados (anti-PII en logs). |
+| TAC-M3 | Modificabilidad | El catálogo de 25 tickers se encapsula en una sola constante (`AllowedTickers` en backend, `ALLOWED_TICKERS` en frontend). Agregar/quitar mercados o tickers en el futuro impacta un solo punto en cada bandera. |
+
+### 10.2 Constraints específicos de esta feature
+
+| Criterio | Medida | Cómo se verifica |
+|---|---|---|
+| GET /me responde en <200ms p95 | 100 requests autenticadas | JMeter o `time curl` con token válido |
+| PATCH /me responde en <300ms p95 | 100 requests autenticadas | JMeter |
+| `password_hash` **NUNCA** aparece en la respuesta de GET /me | Inspección del JSON serializado | Test automatizado: assert que el response no contiene la substring `$2a$` ni el campo `passwordHash`/`password_hash` |
+| Los valores de `nombreCompleto` y `telefono` **NUNCA** aparecen en eventos de auditoría | Búsqueda en Kibana de valores específicos tras múltiples `PROFILE_UPDATED` de un usuario de test | Inspección manual + test que parsea el `details` del evento emitido |
+| El `MeController` **NUNCA** acepta un `userId` por path/body/query | Inspección del código del controller | Revisión + test que envía `?userId={otro}` y verifica que el path es rechazado o ignorado |
 
 ---
 
@@ -666,14 +694,16 @@ Funcionalidad: Configuración de perfil y preferencias de notificación
       | (vacío)       | 400        | VALIDATION_REQUIRED        |
 ```
 
-### 11.2 Criterios no funcionales verificables
+### 11.2 Trazabilidad criterios → escenarios
 
-| Criterio | Medida | Cómo se verifica |
-|---|---|---|
-| GET /me responde en <200ms p95 | 100 requests autenticadas | JMeter o `time curl` |
-| PATCH /me responde en <300ms p95 | 100 requests autenticadas | JMeter |
-| El `password_hash` NUNCA aparece en la respuesta de GET /me | Inspección del JSON | Manual + test automatizado |
-| Los valores de `nombreCompleto` y `telefono` NUNCA aparecen en eventos de auditoría | Búsqueda en Kibana de valores específicos de un usuario de test tras múltiples PROFILE_UPDATED | Inspección |
+| Criterio de aceptación HU-F04 | Escenario Gherkin que lo cubre |
+|---|---|
+| HU-F04 E1: Usuario consulta su perfil completo | "Consulta del perfil autenticado" |
+| HU-F04 E2: Usuario actualiza uno o varios campos editables | "Actualización de un solo campo editable", "Actualización combinada de varios campos" |
+| HU-F04 E3: Cancelar edición descarta cambios | "Cancelación de edición con cambios sin guardar" |
+| HU-F04 E4: Campos read-only no se pueden modificar | "Intento de modificar campo read-only", "Intento de cambiar rol" |
+| HU-F20 E1: Usuario elige canal de notificación | "Cambio de canal de notificación", esquema "Validación de notificationChannel" |
+| HU-F20 E2: Cambio queda persistido y se aplica a notificaciones futuras | Cubierto por persistencia (escenario "Cambio de canal de notificación") + integración con NotificationService (verificable en HU-F09/F10 cuando se envíe la primera notificación de orden por el canal nuevo) |
 
 ---
 
@@ -753,7 +783,7 @@ Funcionalidad: Configuración de perfil y preferencias de notificación
 | Success | PATCH respondió 200 | Toast verde "Cambios guardados", form vuelve a estado clean con datos actualizados |
 | Error 400 con fieldErrors | Validación server-side falló | Errores específicos en campos correspondientes |
 | Error 400 READ_ONLY_FIELD_MODIFIED | Bug del frontend que envió campo read-only | Banner rojo, mensaje técnico (no debería pasar en condiciones normales) |
-| Error 401 | Token expirado durante el flujo | jwtInterceptor maneja refresh transparente; si falla, redirección a /login |
+| Error 401 | Token expirado/inválido durante el flujo | `jwtInterceptor` limpia el `AuthContext` y redirige a `/login` con `?from=/profile` (D18 — sin refresh transparente). Los cambios sin guardar del form se pierden |
 | Error 500 | Error técnico backend | Banner rojo "Error al guardar. Por favor intenta de nuevo." |
 | Modal "Descartar cambios" | Usuario cancela con form dirty | Modal con "Descartar" y "Seguir editando" |
 
@@ -837,3 +867,4 @@ Ninguna. Todas las decisiones críticas resueltas previo a la redacción de esta
 | Versión | Fecha | Cambio | Razón |
 |---|---|---|---|
 | 1.0 | 2026-05-08 | Versión inicial | Tercera spec del MVP (bundle HU-F04 + HU-F20) |
+| 1.1 | 2026-05-20 | (a) Reemplazo de `IAuthentication`/`IAudit` por `JwtAuthenticationFilter`+`SecurityContextHolder`+`Auditor` en §4, §5.1, §8.1, §8.2, §8.4 — sin prefijo `I` por D1 HU-F01 y reflejando que en HU-F02-F03 no se materializó una interfaz `Authentication`. (b) §5.3.2 reescrito: el `jwtInterceptor` redirige a `/login` (sin refresh transparente). (c) §5.3.3 reescrito: `TOKEN_REVOKED` → `TOKEN_INVALID`; revocación diferida con `/logout`. (d) §3 dependencias declara explícitamente la simplificación D18. (e) §9.1 `ACCESS_DENIED.reason` actualizado. (f) §10 nuevo "Atributos de calidad aplicables" (faltaba en v1.0); §11.2 anterior (criterios no funcionales) absorbido en §10.2. (g) §11.2 nuevo: tabla de trazabilidad criterios HU → escenarios Gherkin. (h) §12.1 Error 401 reescrito sin refresh transparente. | Alinear el SPEC con (1) decisiones locked D1 (sin prefijo `I`) y D18 (`/refresh` y `/logout` diferidos a `HU-F0X-token-rotation-logout`) y (2) la realidad del código mergeado en HU-F02-F03 (no existe interfaz `Authentication`; el filtro `JwtAuthenticationFilter` valida directamente). Antes de implementar el bundle, el SPEC debía reflejar lo que se va a construir, no lo planeado pre-D18. |

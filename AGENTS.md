@@ -24,42 +24,49 @@
 
 | Campo | Valor |
 |---|---|
-| Branch | `feat/HU-F02-F03-login-mfa` |
-| HU | HU-F02 (BT-5) + HU-F03 (BT-6) — Login + MFA, **bundle** |
-| Sprint | 1 — Día 2 del ROADMAP (puede derramar a Día 3 por tamaño) |
-| Spec | `specs/HU-F02-F03-login-mfa/SPEC.md` v1.0 |
-| Plan | `specs/HU-F02-F03-login-mfa/plan.md` — **aprobado**, D1–D18 cerradas |
-| Tasks | `specs/HU-F02-F03-login-mfa/tasks.md` — Lotes A–I (E DIFERIDO por D18) |
-| Estado | **Lotes A–H cerrados**. HITO 5 (E2E manual `registro → login → MFA → dashboard`) verde el 2026-05-20. `mvn verify` verde con 90 tests. Sigue Lote I (tests frontend + APRENDIZAJES.md + PR). |
+| Branch | `feat/HU-F04-F20-perfil-notificaciones` |
+| HU | HU-F04 (BT-7) + HU-F20 (BT-9) — Perfil + Canal de notificación, **bundle** |
+| Sprint | 1 — Día 3 del ROADMAP |
+| Spec | `specs/HU-F04-F20-perfil-notificaciones/SPEC.md` v1.1 (publicada 2026-05-20 con changelog alineando D1+D18) |
+| Plan | `specs/HU-F04-F20-perfil-notificaciones/plan.md` — D1–D22 (D19–D22 son ajustes descubiertos en runtime, ver Lotes A/C/D/F) |
+| Tasks | `specs/HU-F04-F20-perfil-notificaciones/tasks.md` — Lotes A–G |
+| Estado | **Lotes A–F cerrados** (2026-05-20). HITOS 1, 2, 3, 4, 5 verdes. `mvn verify` verde con +28 tests nuevos (~118 total). Lote G en cierre: APRENDIZAJES.md actualizado; pendiente E2E visual humano + commit. |
 
 ---
 
 ## Cómo continuar (handoff Claude → próximo agente)
 
-**Estado del bundle — todos los Lotes funcionales cerrados y commiteados.**
+**Estado del bundle HU-F04+F20 — Lotes A–F funcionales cerrados; Lote G en cierre antes del commit grande.**
 
-| Lote | Commit | Resumen | HITO |
-|---|---|---|---|
-| A — JWT + filter + handlers | `c3fe843` (Codex) | `JwtService` HS256 + jjwt 0.12.x, `JwtAuthenticationFilter` validando Bearer, 2 excepciones + 2 handlers de token, `application-test.yml` con `jwt.secret`. | HITO 1 (compile verde) |
-| B — Notification refactor | `1734a79` (Codex) | `WelcomeEmailDispatcher` → `MailNotifier` con `sendOtpEmail` + `sendAccountLockedEmail`, templates `otp.html` y `account-locked.html`, `AuditEventType` con eventos `*_EMAIL_FAILED`. | `MailNotifierTest` 6 verdes |
-| C — Login flow | `a55c553` (Claude) | `UserRepository.findByEmailIgnoreCase`, `LoginAttemptTracker`, `TempSessionManager/TempSessionData/OtpGenerator`, DTOs + 3 excepciones + handlers (401/423/403), `LoginService` + `LoginController`, SecurityConfig permitAll. AuditEventType + `LOGIN_ATTEMPT`/`ACCOUNT_LOCKED`. | HITO 2 (mvn compile verde, 57 src) |
-| D — MFA flow | *commit user* | `MfaAttemptTracker`, `TokenIssuer`, 4 DTOs + 6 excepciones + handlers, `MfaService` (verify + resend) + `MfaController`, SecurityConfig permitAll. AuditEventType + 4 eventos MFA. | HITO 3 (mvn compile verde, 71 src) |
-| ~E — Refresh/Logout~ | DIFERIDO por D18 | Mini-HU futura `HU-F0X-token-rotation-logout`. | — |
-| F — Tests backend + CI Redis | *commit user* | 7 tests unit (46 casos: JwtService, OtpGenerator, trackers, services, TokenIssuer), 3 IT (AuthFlowIT, LockoutFlowIT, OpenApiContractIT extendido), `ci.yml` con service redis. Fix de placeholder `${JWT_SECRET:}` + RegisterFlowIT sin exclude de Redis. | HITO 4 (`mvn verify` verde — 90 tests) |
-| G — Frontend infra | *commit user* | `AuthContext` + `AuthProvider` + `useAuth`, `apiClient` con interceptors JWT (D18 simplificado), `ProtectedRoute`, tipos + mensajes ES extendidos, `useSession` borrado, `main.tsx` envuelto en AuthProvider, `errorParser` + `retryAfter`. | tsc/build/test frontend verdes |
-| H — Frontend pages | *commit user* | 2 schemas zod, 3 hooks, 4 componentes (Countdown, OTPInput, AppHeader, ResendButton), `LoginForm`, 3 pages (LoginPage real, MFAVerifyPage, DashboardPage), `App.tsx` con rutas + ProtectedRoute. Fixes infra: `docker-compose.yml` con JWT_SECRET + `nginx.conf` sin trailing slash en proxy_pass. | **HITO 5 ✅** E2E manual completo registro → login → MFA con OTP de MailHog → dashboard. |
+| Lote | Resumen | HITO |
+|---|---|---|
+| A — Migración V3 + entidad | `V3__user_profile_extension.sql` con `notification_channel` + `tickers_of_interest JSONB` + 2 check constraints + índice GIN. Enums `NotificationChannel`, `Market`. `User` extendido + método de dominio `applyProfileUpdate(...)` (D19, encapsulación PATCH). | HITO 1 ✅ (mvn compile + Flyway aplicó V3 verde, Spring Boot arrancó 8.3s) |
+| B — Catálogo + validadores + audit enum | `AllowedTickers` (25 tickers agrupados por mercado), `@AllowedTicker` + `AllowedTickerValidator`, `@NoDuplicates` + `NoDuplicatesValidator`. `AuditEventType` + `PROFILE_UPDATED`, `NOTIFICATION_CHANNEL_CHANGED`, `PROFILE_UPDATE_FAILED`. `validation-messages.properties` + 5 códigos. | Lote B verde (incluido en HITO 4) |
+| C — DTO + Mapper + Service + Controller | `UpdateProfileRequest`, `UserProfileResponse`, `UserProfileMapper` (MapStruct), 4 excepciones, `GlobalExceptionHandler` con handler para `UnrecognizedPropertyException` (D3 strict Jackson) + handler para `InvalidFormatException` enum → `VALIDATION_INVALID_CHANNEL`. `ProfileService` con `Snapshot` interno para cambio-detection (D7, D17 idempotencia, D18 no-PII). `MeController` con `@AuthenticationPrincipal AuthenticatedUser` (D9 anti path-tampering). `fail-on-unknown-properties=true` global en `application.yml`. | HITO 3 ✅ (curl E2E: register → login → MFA → GET/PATCH /me + read-only rechazado + ticker inválido rechazado + idempotente) |
+| D — Tests backend | `AllowedTickerValidatorTest` (5), `NoDuplicatesValidatorTest` (5), `UserProfileMapperTest` (3 — incluye assertion no-leak `passwordHash`/`$2a$`), `ProfileServiceTest` (8 — happy, multi-field, idempotente, no-PII, error-rethrow), `MeFlowIT` (7 — Postgres+Redis reales, registro→login→MFA→GET/PATCH /me). +28 tests. | HITO 4 ✅ (`mvn verify` BUILD SUCCESS — total ~118 tests) |
+| E — Frontend infra | `constants/tickers.ts` (mirror del backend, sincronizar manualmente), `types/api.ts` + 4 types perfil, `schemas/updateProfile.ts` zod, `api/profileApi.ts`, `useProfile` + `useUpdateProfile` (cache invalidation + optimistic `AuthContext.updateUser` en cambio de nombre), `useDiscardChangesPrompt` (modal manual + `beforeunload`, D22), `DiscardChangesModal` componente genérico. `AuthContext` extendido con `updateUser(partial)`. `messages.es.ts` +5 códigos. | tsc verde |
+| F — Pages + routing | `ProfilePage.tsx` (orquesta secciones: info personal, canal radio group, grid de tickers agrupado por mercado con contador, SaveCancelBar, modal de descarte). `App.tsx` + ruta `/profile` con `ProtectedRoute`. `AppHeader` + link "Mi perfil" (era placeholder en HU-F02-H; ahora navega). | HITO 5 ✅ (`npm run build` verde 180 modules, frontend container rebuildeado + healthy; `/profile` responde 200 — E2E visual queda para el humano) |
+| G — Cierre | APRENDIZAJES.md sección "Día 3 — HU-F04+F20" agregada con 8 reflexiones técnicas. AGENTS.md "Trabajo activo" actualizado (este bloque). Tests frontend deferred [[P1]] (validadores + mapper backend cubren riesgos críticos). | Pendiente HITO 6 (commit + PR) |
 
-**Siguiente — Lote I (cierre del bundle):**
+**Pendiente al humano antes de mergear:**
 
-- ☐ **T8.1–T8.5** Tests frontend con Vitest + RTL: `AuthContext`, `LoginForm`, `MFAVerifyPage`, `ProtectedRoute`, `jwtInterceptor`.
-- ☐ **T8.6** Verificación DoD spec §15 — marcar N/A explícitos los ítems de refresh/logout por D18.
-- ☐ **T8.7** `APRENDIZAJES.md` — sección "Día 2-3 — HU-F02+F03" en primera persona, estilo Día 0/Día 1 ([[P4]]).
-- ☐ **T8.8** PR `feat/HU-F02-F03-login-mfa` → `main` con plantilla CONVENTIONS §4.1 + checklist DoD (N/A explícitos por D18). HITO 6.
+- ☐ Validación visual E2E manual del flujo en browser (`localhost:5173/profile`): editar nombre + canal + 3 tickers → Guardar → recargar → cambios persistidos; editar y Cancelar → modal de descarte.
+- ☐ Commit grande con los archivos del bundle (Lotes A–G). Mensaje sugerido en `C:\Users\juang\AppData\Local\Temp\bt-hu-f04-f20.txt` (Claude lo deja preparado al cierre de esta sesión).
+- ☐ PR `feat/HU-F04-F20-perfil-notificaciones` → `main` con plantilla CONVENTIONS §4.1.
 
-**Deuda nueva identificada durante el bundle (registrada en tasks.md):**
-- Mini-HU `HU-F0X-token-rotation-logout`: `/refresh` con rotación, `/logout` con blacklist, cookie HttpOnly refresh, `useLogout`, single-flight refresh en jwtInterceptor. Diferida por D18.
-- Limpiar `JWT_REFRESH_SECRET` de `.env.example` (no se usa — refresh token será opaco, no JWT, decisión D2).
-- (Opcional) Refactor `JwtService` para inyectar `Clock` y poder testear expiración sin TTL negativo.
+**Decisiones nuevas registradas (Dxx — además de las del plan.md original):**
+
+- **D19** (Lote A): el PATCH parcial se encapsula en `User.applyProfileUpdate(...)` (método de dominio), no con setters Lombok. `getTickersOfInterest()` retorna vista inmutable.
+- **D20** (Lote C smoke): `GET /me` sin token devuelve 403 (no 401 como pedía SPEC §5.3.1) porque Spring Security sin `AuthenticationEntryPoint` custom mapea `anyRequest().authenticated()` a 403. Deuda pre-existente desde HU-F02, no regresión.
+- **D21** (Lote D test fix): el catch de `DataAccessException` en `ProfileService.updateMe()` emite 2 audits (PROFILE_UPDATED ya emitido antes del mapper.toResponse + PROFILE_UPDATE_FAILED en catch). Audit post-commit transaccional es over-engineering MVP.
+- **D22** (Lote F): `useBlocker` requiere `createBrowserRouter` (DataRouter). `main.tsx` usa `BrowserRouter` clásico. En vez de migrar router (riesgo de regresión), `useDiscardChangesPrompt` es manual: Cancel button abre modal + `beforeunload` cubre cierre. Pierde modal en navegación SPA via link — riesgo bajo MVP.
+
+**Deuda nueva identificada (post-bundle):**
+
+- Tests frontend del Lote G saltados — `useProfile.test`, `useUpdateProfile.test`, `ProfilePage.test`, `DiscardChangesModal flow`. Cobertura crítica (no-leak `passwordHash`, validators, audit dispatch) está en backend.
+- `ARCHITECTURE.md` §5 aún lista interfaces con prefijo `I` (deuda doc-only declarada en SPEC v1.1).
+- Migración a DataRouter del frontend → habilita `useBlocker` para confirmación de descarte en navegación SPA.
+- Generación automática de `constants/tickers.ts` desde el OpenAPI enum del backend (hoy se mantienen sincronizados manualmente).
 
 ---
 

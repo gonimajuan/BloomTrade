@@ -10,10 +10,10 @@
 | Sprint | 1 |
 | Prioridad MoSCoW | Must |
 | Estado | Ready |
-| Autor | *[Tu nombre]* |
+| Autor | Juan |
 | Fecha creación | 2026-05-08 |
-| Última actualización | 2026-05-08 |
-| Versión spec | 1.0 |
+| Última actualización | 2026-05-20 |
+| Versión spec | 1.1 |
 | Día estimado del ROADMAP | Día 4 |
 
 ---
@@ -94,7 +94,7 @@ Es la primera integración real con API externa del MVP y la única del Sprint 1
 3. Frontend muestra dos cards de plan (mensual y anual) con botones "Activar"
 4. Usuario presiona "Activar plan mensual" (o anual)
 5. Frontend envía `POST /api/v1/subscriptions/checkout-session` con body `{ plan: "MONTHLY" }`
-6. Backend valida JWT y resuelve `userId`
+6. `JwtAuthenticationFilter` (HU-F02-F03) valida el JWT y pobla `SecurityContextHolder` con el `AuthenticatedUser`; `SubscriptionController` resuelve el `userId` desde el principal, nunca desde body/query/path
 7. Backend consulta `app.subscriptions` por `user_id` con status `ACTIVE`
 8. Si encuentra una activa → devuelve 409 `SUBSCRIPTION_ALREADY_ACTIVE`
 9. Backend consulta `app.users.stripe_customer_id` del usuario
@@ -166,7 +166,7 @@ Es la primera integración real con API externa del MVP y la única del Sprint 1
 1. Frontend muestra modal de confirmación: "Tu acceso premium continúa hasta {currentPeriodEnd}. ¿Confirmas la cancelación?"
 2. Usuario confirma
 3. Frontend envía `POST /api/v1/subscriptions/cancel`
-4. Backend valida JWT y resuelve `userId`
+4. `JwtAuthenticationFilter` valida el JWT y `SubscriptionController` resuelve el `userId` desde `SecurityContextHolder` (igual que §5.1 paso 6)
 5. Backend consulta `app.subscriptions` por `user_id` con `status = ACTIVE`
 6. Si no encuentra: devuelve 404 `NO_ACTIVE_SUBSCRIPTION`
 7. Backend invoca `StripeAdapter.cancelSubscriptionAtPeriodEnd(stripe_subscription_id)`
@@ -653,20 +653,22 @@ No aplica.
 
 ### 8.2 Interfaces consumidas
 
-| Interfaz | Módulo que la expone | Para qué se usa aquí |
+| Mecanismo / Bean | Módulo que lo expone | Para qué se usa aquí |
 |---|---|---|
-| `IAuthentication` | AuthService | Validar JWT y resolver `userId` en endpoints autenticados |
-| `IAudit` | AuditService | Emitir todos los eventos de §9.1 |
-| `INotification` | NotificationService | Disparar emails de bienvenida, cancelación programada, expiración, fallo de pago |
-| `IPayment` | IntegrationService.StripeAdapter | Crear Customer, crear Checkout Session, cancelar Subscription, recuperar Subscription detalles, validar webhook signature |
+| `JwtAuthenticationFilter` + `JwtService` + `SecurityContextHolder` | AuthService (HU-F02-F03) | Validar JWT (firma HS256 + `exp`) en endpoints autenticados (`/checkout-session`, `/me`, `/cancel`) y resolver `userId` desde el principal |
+| `Auditor` (sin prefijo `I` por D1 HU-F01) | AuditService | Emitir todos los eventos de §9.1 |
+| `Notifier` (sin prefijo `I`, ya existente en el código tras HU-F02-F03) | NotificationService | Disparar emails de bienvenida, cancelación programada, expiración, fallo de pago |
+| `PaymentGateway` (a introducir en este bundle, sin prefijo `I`) | IntegrationService.StripeAdapter | Crear Customer, crear Checkout Session, cancelar Subscription, recuperar detalles de Subscription, validar webhook signature |
 
-> **Nota:** `IPayment` es una interfaz introducida aquí pero ya prevista en `ARCHITECTURE.md` §5 con la línea `IntegrationService EXPONE IPayment CONSUME PortfolioService`. En el MVP, el consumidor real de `IPayment` es AuthService.subscription (no PortfolioService). La interfaz arquitectónica preexistente se ajusta a la realidad: cualquier módulo que necesite procesar pagos consume `IPayment`.
+> **Nota D1:** Las interfaces inter-módulo se nombran sin prefijo `I` (decisión HU-F01 D1 — `Auditor`, `Notifier`, `BalanceInitializer`). El SPEC v1.0 figuraba con `IAuthentication`/`IAudit`/`INotification`/`IPayment`; v1.1 alinea con la decisión. Adicionalmente, en HU-F02-F03 **no se materializó una interfaz `Authentication`**: la validación quedó en el filtro Spring Security estándar.
+>
+> **Nota sobre `PaymentGateway` vs `ARCHITECTURE.md` §5:** El catálogo de interfaces en `ARCHITECTURE.md` §5 todavía lista `IPayment` (atrasado respecto a D1). El SPEC introduce el bean con nombre `PaymentGateway` para mantener D1; la actualización de §5 del documento maestro queda como deuda doc-only (a sincronizar en algún PR posterior). El consumidor real en MVP es `AuthService.subscription`, no `PortfolioService` como dice §5 — la interfaz arquitectónica se ajusta a la realidad: cualquier módulo que necesite procesar pagos consume `PaymentGateway`.
 
 ### 8.3 Interfaces expuestas
 
 | Interfaz | Quién la consumirá | Contrato |
 |---|---|---|
-| `ISubscriptionStatus` | HU-F19, HU-F23 (post-MVP), endpoints futuros con verificación premium | Método `isPremium(userId): boolean` y `getCurrentSubscription(userId): Subscription \| null` |
+| `SubscriptionStatus` (sin prefijo `I` por D1) | HU-F19, HU-F23 (post-MVP), endpoints futuros con verificación premium | Método `isPremium(userId): boolean` y `getCurrentSubscription(userId): Subscription \| null` |
 
 ### 8.4 Tácticas de Bass aplicadas
 
@@ -735,15 +737,17 @@ No aplica directamente. Sin embargo: la flag `isPremium` en `UserProfileResponse
 |---|---|---|
 | ESC-I2 | Interoperabilidad | "Stripe rechaza el pago de suscripción premium → mensaje de error mostrado al usuario en <3 segundos". Se cumple porque el rechazo de Stripe llega como respuesta síncrona a la llamada `checkout.sessions.create` (no se requiere webhook). El flujo de error 5.3.3 se ejecuta dentro de la misma request del usuario. |
 
-### 10.2 Constraints específicos
+### 10.2 Constraints específicos de esta feature
 
-| Constraint | Medida |
-|---|---|
-| Endpoint POST /subscriptions/checkout-session responde en <2s p95 | Incluye latencia de llamada a Stripe API |
-| Webhook procesado y respuesta 200 a Stripe en <5s | Stripe considera "timeout" si tarda más de 10s y reintentará |
-| `stripe_customer_id` NUNCA expuesto en respuestas API | Verificable por inspección |
-| `stripe_subscription_id` NUNCA expuesto en respuestas API | Verificable por inspección |
-| Datos de tarjeta NUNCA pasan por servidores de BloomTrade (responsabilidad de Stripe Checkout) | Verificable por inspección de código backend (no debe existir referencia a `card_number`, `cvv`, etc.) |
+| Constraint | Medida | Cómo se verifica |
+|---|---|---|
+| Endpoint POST /subscriptions/checkout-session responde en <2s p95 | 50 requests, incluye latencia de llamada a Stripe API | JMeter o `time curl` con token válido |
+| Webhook procesado y respuesta 200 a Stripe en <5s | Stripe considera "timeout" si tarda más de 10s y reintentará | Inspección de logs de stripe-cli en local |
+| `stripe_customer_id` NUNCA expuesto en respuestas API | Inspección de respuesta JSON de GET /me y GET /subscriptions/me | Manual + test automatizado que assertea ausencia de la substring `cus_` y del campo `stripeCustomerId`/`stripe_customer_id` |
+| `stripe_subscription_id` NUNCA expuesto en respuestas API | Inspección de respuesta JSON | Manual + test automatizado que assertea ausencia del campo `stripeSubscriptionId`/`stripe_subscription_id` y de la substring `sub_` |
+| Datos de tarjeta NUNCA pasan por servidores de BloomTrade (responsabilidad de Stripe Checkout) | Inspección manual de logs durante un checkout completo + grep del código backend | Backend NO debe contener referencias a `card_number`, `cvv`, `exp_month`, `exp_year` |
+| Idempotencia: el mismo `stripe_event_id` procesado N veces produce exactamente UN cambio de estado | Test de integración con WireMock que envía el mismo evento 100 veces seguidas | Test automatizado: assert que `app.subscriptions` tiene una sola fila y `app.stripe_webhook_events` tiene un solo registro `PROCESSED` (los 99 restantes son `DUPLICATE`) |
+| El `SubscriptionController` **NUNCA** acepta un `userId` por path/body/query | Inspección del código del controller | Revisión + test con `?userId={otro}` que verifica que el path es rechazado o ignorado |
 
 ---
 
@@ -887,15 +891,20 @@ Funcionalidad: Suscripción premium con Stripe
       | null        | 400        | VALIDATION_REQUIRED      |
 ```
 
-### 11.2 Criterios no funcionales verificables
+### 11.2 Trazabilidad criterios → escenarios
 
-| Criterio | Medida | Cómo se verifica |
-|---|---|---|
-| POST /subscriptions/checkout-session responde en <2s p95 | 50 requests | JMeter |
-| Webhook responde 200 a Stripe en <5s | Inspección de logs de stripe-cli en local | Manual |
-| `stripe_customer_id` NUNCA aparece en respuestas API | Inspección de respuesta JSON de /me y /subscriptions/me | Manual + test |
-| Datos de tarjeta NUNCA llegan al backend | Inspección manual de logs durante un checkout | Manual |
-| Idempotencia: enviar el mismo webhook 100 veces resulta en una sola fila procesada | Test de integración con WireMock | Test automatizado |
+| Criterio de aceptación HU-F06 | Escenario Gherkin que lo cubre |
+|---|---|
+| HU-F06 E1: Usuario activa plan mensual y queda premium | "Activación exitosa de suscripción mensual" |
+| HU-F06 E2: Usuario activa plan anual con período correcto | "Activación exitosa de suscripción anual" |
+| HU-F06 E3: Una sola suscripción activa por usuario | "Usuario con suscripción activa intenta suscribirse de nuevo" + invariante BD `uq_one_active_subscription_per_user` |
+| HU-F06 E4: Usuario cancela y mantiene acceso hasta fin de período | "Cancelación programada de suscripción activa" |
+| HU-F06 E5: Suscripción cancelada termina al fin de período | "Suscripción expira tras cancelación programada" |
+| HU-F06 E6: Fallo de renovación degrada inmediatamente | "Fallo de renovación automática (PAST_DUE)" |
+| HU-F06 E7: Usuario puede re-suscribirse tras terminación | "Re-suscripción tras cancelación", "Re-suscripción tras PAST_DUE" |
+| HU-F06 E8: Webhooks falsos/duplicados son rechazados/idempotentes | "Webhook con firma inválida es rechazado", "Webhook duplicado es ignorado" |
+| HU-F06 E9: Errores transitorios de Stripe se reintentan | "Stripe API caído al crear checkout" |
+| HU-F06 E10: Validación de plan | Esquema "Validación del campo plan" |
 
 ---
 
@@ -1068,3 +1077,4 @@ Ninguna. Todas las decisiones críticas resueltas previo a la redacción de esta
 | Versión | Fecha | Cambio | Razón |
 |---|---|---|---|
 | 1.0 | 2026-05-08 | Versión inicial | Cuarta spec del MVP (HU-F06), cierra el Sprint 1 |
+| 1.1 | 2026-05-20 | (a) §5.1 paso 6 y §5.2.1 paso 4: el mecanismo de validación JWT se nombra explícitamente (`JwtAuthenticationFilter` + `SecurityContextHolder`) en lugar del genérico "Backend valida JWT". (b) §8.2 reescrita: interfaces sin prefijo `I` por D1 HU-F01 — `IAuthentication`→filtro Spring Security, `IAudit`→`Auditor`, `INotification`→`Notifier`, `IPayment`→`PaymentGateway`. Nota explícita de la deuda doc-only en `ARCHITECTURE.md` §5 (que todavía lista `IPayment`). (c) §8.3: `ISubscriptionStatus`→`SubscriptionStatus`. (d) §10.2 expandida con los criterios no funcionales antes en §11.2 + columna "Cómo se verifica" + dos constraints nuevos (idempotencia 100×, prohibición de `userId` por path/body/query). (e) §11.2 reemplazada por tabla de trazabilidad criterios HU↔escenarios Gherkin (10 mapeos). | Alinear el SPEC con la decisión locked D1 (sin prefijo `I`) y con la realidad del código mergeado en HU-F02-F03 (no existe interfaz `Authentication`; el filtro Spring Security estándar valida directamente). Reorganizar §10/§11 según el patrón canónico aplicado en HU-F02-F03 v1.0, HU-F04+F20 v1.1: §10 = atributos de calidad + constraints, §11 = criterios funcionales (escenarios) + trazabilidad. |

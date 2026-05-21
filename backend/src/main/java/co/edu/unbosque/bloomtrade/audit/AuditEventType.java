@@ -55,5 +55,24 @@ public enum AuditEventType {
      * Sesión temporal invalidada por 3 fallos de OTP o 3 reenvíos agotados (spec HU-F02 §9.1).
      * detail lleva {@code reason} en {@code MAX_ATTEMPTS | MAX_RESENDS}.
      */
-    MFA_SESSION_INVALIDATED
+    MFA_SESSION_INVALIDATED,
+
+    /**
+     * Perfil del usuario actualizado vía PATCH /api/v1/me (spec HU-F04+F20 §9.1). detail lleva
+     * {@code changedFields: List<String>} — SOLO nombres de campo, NO valores (anti-PII).
+     */
+    PROFILE_UPDATED,
+
+    /**
+     * Cambio específico del canal de notificación (spec HU-F04+F20 §9.1). Se emite ADEMÁS de
+     * {@code PROFILE_UPDATED} cuando {@code notificationChannel} es uno de los campos cambiados.
+     * detail lleva {@code from, to} (enums, no PII).
+     */
+    NOTIFICATION_CHANNEL_CHANGED,
+
+    /**
+     * Error técnico durante la actualización del perfil (spec HU-F04+F20 §9.1). detail lleva
+     * {@code reason="TECHNICAL_ERROR"} y {@code errorClass}.
+     */
+    PROFILE_UPDATE_FAILED
 }
