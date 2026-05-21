@@ -13,6 +13,13 @@ import co.edu.unbosque.bloomtrade.auth.exception.ResendCooldownActiveException;
 import co.edu.unbosque.bloomtrade.auth.exception.TempSessionInvalidException;
 import co.edu.unbosque.bloomtrade.auth.exception.TokenExpiredException;
 import co.edu.unbosque.bloomtrade.auth.exception.TokenInvalidException;
+import co.edu.unbosque.bloomtrade.auth.profile.domain.NotificationChannel;
+import co.edu.unbosque.bloomtrade.auth.profile.exception.DuplicateTickersException;
+import co.edu.unbosque.bloomtrade.auth.profile.exception.InvalidTickerException;
+import co.edu.unbosque.bloomtrade.auth.profile.exception.ReadOnlyFieldModifiedException;
+import co.edu.unbosque.bloomtrade.auth.profile.exception.TooManyTickersException;
+import com.fasterxml.jackson.databind.exc.InvalidFormatException;
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -70,12 +77,107 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadableBody(
             HttpMessageNotReadableException ex, HttpServletRequest request) {
+        // HU-F04+F20 D3: cliente intentó PATCH /me con un campo no editable (email, rol, etc.).
+        // Jackson lo detecta porque FAIL_ON_UNKNOWN_PROPERTIES=true (application.yml).
+        Throwable cause = ex.getCause();
+        if (cause instanceof UnrecognizedPropertyException upe) {
+            String field = upe.getPropertyName();
+            String code = "READ_ONLY_FIELD_MODIFIED";
+            return ResponseEntity.badRequest()
+                    .body(
+                            ErrorResponse.validation(
+                                    400,
+                                    code,
+                                    ValidationMessages.humanFor(code),
+                                    request.getRequestURI(),
+                                    TraceIdFilter.currentTraceId(),
+                                    List.of(
+                                            new FieldErrorItem(
+                                                    field,
+                                                    code,
+                                                    ValidationMessages.humanFor(code)))));
+        }
+        // HU-F04+F20: payload con un enum (NotificationChannel) en valor desconocido.
+        if (cause instanceof InvalidFormatException ife
+                && ife.getTargetType() != null
+                && NotificationChannel.class.isAssignableFrom(ife.getTargetType())) {
+            String code = "VALIDATION_INVALID_CHANNEL";
+            return ResponseEntity.badRequest()
+                    .body(
+                            ErrorResponse.of(
+                                    400,
+                                    code,
+                                    ValidationMessages.humanFor(code),
+                                    request.getRequestURI(),
+                                    TraceIdFilter.currentTraceId()));
+        }
         return ResponseEntity.badRequest()
                 .body(
                         ErrorResponse.of(
                                 400,
                                 VALIDATION_FAILED,
                                 ValidationMessages.humanFor(VALIDATION_FAILED),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(ReadOnlyFieldModifiedException.class)
+    public ResponseEntity<ErrorResponse> handleReadOnlyField(
+            ReadOnlyFieldModifiedException ex, HttpServletRequest request) {
+        String code = "READ_ONLY_FIELD_MODIFIED";
+        return ResponseEntity.badRequest()
+                .body(
+                        ErrorResponse.validation(
+                                400,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId(),
+                                List.of(
+                                        new FieldErrorItem(
+                                                ex.getFieldName(),
+                                                code,
+                                                ValidationMessages.humanFor(code)))));
+    }
+
+    @ExceptionHandler(InvalidTickerException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidTicker(
+            InvalidTickerException ex, HttpServletRequest request) {
+        String code = "INVALID_TICKER";
+        return ResponseEntity.badRequest()
+                .body(
+                        ErrorResponse.of(
+                                400,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(TooManyTickersException.class)
+    public ResponseEntity<ErrorResponse> handleTooManyTickers(
+            TooManyTickersException ex, HttpServletRequest request) {
+        String code = "TOO_MANY_TICKERS";
+        return ResponseEntity.badRequest()
+                .body(
+                        ErrorResponse.of(
+                                400,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(DuplicateTickersException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateTickers(
+            DuplicateTickersException ex, HttpServletRequest request) {
+        String code = "DUPLICATE_TICKERS";
+        return ResponseEntity.badRequest()
+                .body(
+                        ErrorResponse.of(
+                                400,
+                                code,
+                                ValidationMessages.humanFor(code),
                                 request.getRequestURI(),
                                 TraceIdFilter.currentTraceId()));
     }

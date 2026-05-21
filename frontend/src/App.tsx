@@ -4,6 +4,7 @@ import { TermsPage } from './pages/TermsPage';
 import { LoginPage } from './pages/LoginPage';
 import { MFAVerifyPage } from './pages/MFAVerifyPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { useAuth } from './features/auth/context/AuthContext';
 
@@ -24,6 +25,14 @@ function App() {
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute>
+            <ProfilePage />
           </ProtectedRoute>
         }
       />

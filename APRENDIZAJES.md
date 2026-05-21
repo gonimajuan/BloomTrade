@@ -263,3 +263,58 @@ El otro hallazgo importante fue que **los fixes que parecen "post-mortem" del lo
 El bootstrap de un proyecto "vacío" tomó dos días de trabajo intenso (sesiones A → D + ajustes). Habría tomado mucho más sin Claude Code, pero también habría tomado más con Claude Code sin un plan estructurado — la mayoría del tiempo "perdido" fue debuggeando integraciones (Postgres sin .env, nginx IPv6, types de Node, org key de SonarCloud). Esos errores no son evitables a priori, pero **detectarlos rápido sí depende del proceso**: logs primero, asumir después.
 
 Lo que más me llamó la atención: cada herramienta del stack tiene una "cara amable" (la documentación oficial) y una "cara cruda" (los errores reales en producción/Docker/Windows). Aprender a operar la cara cruda es lo que distingue a alguien que "siguió un tutorial" de alguien que "armó la infraestructura". Día 0 fue mayoritariamente esa cara cruda.
+
+---
+
+## Día 3 — HU-F04 + HU-F20 Perfil + Notificaciones (2026-05-20)
+
+### SPECs heredados: leer antes de creer
+
+Encontré los `SPEC.md` de HU-F04+F20 y HU-F06 ya redactados en v1.0 desde el 2026-05-08. Mi primer instinto fue asumir que estaban listos y pasar al plan; el reflejo correcto fue leerlos contra el código actual. **Encontré 3 inconsistencias graves:**
+1. Referencian `IAuthentication.validateToken()` — interfaz que nunca se materializó (HU-F02-F03 dejó la validación en `JwtAuthenticationFilter` directo).
+2. Asumen refresh transparente del jwtInterceptor — pero D18 (HU-F02) difirió `/refresh` y `/logout` post-MVP.
+3. Prefijo `I` en interfaces (`IAudit`, `INotification`) — D1 HU-F01 las renombró a `Auditor`, `Notifier`.
+
+**Lección**: un SPEC con `Estado: Ready` no significa "verdadero", significa "redactado en un punto del pasado". Antes de codificar, validar contra el código actual y las decisiones locked posteriores. Publiqué v1.1 de ambos SPECs con un changelog explícito de las correcciones — la diferencia entre v1.0 y v1.1 ahora es trazable.
+
+### Hibernate 6 JSONB nativo es trivial — Spring Boot 3.3+
+
+Mapear `tickers_of_interest JSONB` ↔ `List<String>` me dio miedo al principio (recordaba la era oscura de `hibernate-types`, `@TypeDef`, librerías de Vlad). Resultó ser:
+```java
+@JdbcTypeCode(SqlTypes.JSON)
+@Column(name = "tickers_of_interest", nullable = false, columnDefinition = "jsonb")
+private List<String> tickersOfInterest;
+```
+**Sin librerías extra.** Hibernate 6.5 (incluido en Spring Boot 3.3) lo trae nativo. Jackson (ya en el classpath) hace la serialización. El índice GIN del DDL sigue funcional. **Lección**: revisar primero qué trae el stack actual antes de buscar librería externa — muchas cosas que requerían dependencias en 2022 ahora son nativas.
+
+### Encapsular el PATCH parcial en el aggregate (DDD)
+
+Mi primer impulso era poner `@Setter` Lombok en los 4 campos editables del `User` y dejar al service hacer `if (req.X != null) user.setX(req.X)`. **Mal**: expone setters innecesarios al resto del módulo y rompe encapsulación del aggregate. La opción correcta — registré como D19 — fue un método de dominio `applyProfileUpdate(...)` que recibe los 4 argumentos posibles y aplica solo los no-`null` internamente. El service no necesita conocer la representación interna; solo pasa el payload y captura un snapshot para detectar qué cambió. **Bonus**: el override de `getTickersOfInterest()` que devuelve `Collections.unmodifiableList` evita que un caller mute la lista interna después de leerla.
+
+### `FAIL_ON_UNKNOWN_PROPERTIES=true` + handler dedicado vs DTO defensivo
+
+El SPEC §5.3.5 exige rechazar explícitamente campos no editables (email, rol, etc) con código `READ_ONLY_FIELD_MODIFIED` y el nombre del field intentado. Dos enfoques:
+- **A**: DTO con TODOS los campos read-only declarados + custom validator que rechaza si están presentes.
+- **B**: `spring.jackson.deserialization.fail-on-unknown-properties=true` global + handler dedicado en `GlobalExceptionHandler` que mapea `UnrecognizedPropertyException` → 400 con `propertyName`.
+
+Fui con **B** (D3). Mucho más limpio: cero código defensivo en el DTO, el `UpdateProfileRequest` declara solo lo que SÍ es editable, Jackson detecta lo desconocido automáticamente. **Lección**: cuando una validación se aplica a "todo lo no listado", configurar el framework para que lo enforce gratis es preferible a listar exhaustivamente las cosas a rechazar.
+
+### El catch del `DataAccessException` emite DOS audits (D21)
+
+Mi `ProfileService.updateMe()` primero emite `PROFILE_UPDATED` con los `changedFields` y luego llama `mapper.toResponse(user)`. Si el mapper falla (mock en el test), el catch emite además `PROFILE_UPDATE_FAILED`. **Fueron 2 audits, no 1**. El test correcto verifica ambos en orden. El "fix purista" (audit post-commit con Spring `TransactionSynchronization`) es over-engineering para MVP — lo dejé registrado como D21 y ajusté el test.
+
+**Lección importante**: la trazabilidad forense gana siendo "ruidosa": preferir emitir más eventos auditados (incluso si parecen redundantes) que perder uno por una transacción que se cayó. ES indexa rápido y los duplicates se filtran en query.
+
+### El `useBlocker` de react-router 6.4+ requiere DataRouter
+
+Plan asumía D15 (`useBlocker` para interceptar navegación SPA con form dirty). En la práctica `main.tsx` usa `BrowserRouter` clásico (no `createBrowserRouter`), y `useBlocker` SOLO funciona con DataRouter. Migrar el router entero era invasivo (riesgo de regresión en rutas de auth ya en main). **Solución**: refactoricé `useDiscardChangesPrompt` a un modal manual — el botón Cancel pide confirmación si el form está dirty; `beforeunload` cubre cierre de pestaña. Cubre el caso del SPEC sin tocar la infra. Lo registré como D22 ajuste al plan.
+
+**Lección**: cuando una librería pide un cambio arquitectónico para una feature trivial, evaluar el costo. A veces el degraded mode (mi opción B) es la elección correcta. La feature funciona; lo que pierdo es el confirm cuando el usuario sale via link a otra ruta SPA — riesgo bajo para una app de un usuario.
+
+### Smoke test E2E sirve más que 5 tests unitarios
+
+Después del Lote C, en lugar de saltar al Lote D directo, paré 10 minutos y armé un smoke test en PowerShell: registro → login → MFA → GET /me → PATCH /me con varios casos. **Encontré inmediatamente un typo (`aceptoTerminos` vs `aceptaTerminos`) en mi propio smoke**, no en el código. Si hubiera saltado al Lote D, ese error habría aparecido como falla de IT 20 minutos después con stack trace en Java en lugar de "tu curl está mal". **Lección**: el smoke E2E al final de cada lote es el mejor uso de 10 minutos posibles. Más rápido, más concreto y más representativo que los unit tests que voy a escribir después.
+
+### Reflexión: cadencia "lotes + hitos" se siente diferente bajo prisa
+
+El usuario me dijo "tengo prisa" al inicio de la sesión y "todos los lotes primero, commit grande al final". Eso cambió la estrategia: agregue tareas con `TaskCreate`, agrupé varias en cada lote, y reporté en formato resumen al cierre de cada hito en lugar de checkpoint detallado. **Conservé** las decisiones críticas (D19-D22 documentadas), **omití** los tests frontend del Lote G (deuda registrada — los validators y mapper del backend cubren los riesgos críticos: no-leak `passwordHash`, no-PII en audit). **Aprendí**: el feedback "lotes + hitos" tiene dos modos — el normal (validación humana entre lotes) y el "deja correr" (validación en hitos críticos solamente). El segundo modo requiere disciplina mía para no derivar a vibe coding; lo evité documentando cada decisión Dxx en el momento.

@@ -67,6 +67,33 @@ export interface MfaResendResponse {
   resendsRemaining: number;
 }
 
+// ─── HU-F04 + HU-F20 (perfil + canal de notificación) ──────────────────────
+
+export type NotificationChannel = 'EMAIL' | 'SMS' | 'WHATSAPP';
+
+export interface UserProfileResponse {
+  id: string;
+  email: string;
+  nombreCompleto: string;
+  tipoDocumento: DocumentType;
+  numeroDocumento: string;
+  telefono: string;
+  rol: UserRole;
+  estado: UserStatus;
+  notificationChannel: NotificationChannel;
+  tickersOfInterest: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Todos los campos son opcionales: `null`/ausente = no enviar; lista vacía = limpiar. */
+export interface UpdateProfileRequest {
+  nombreCompleto?: string;
+  telefono?: string;
+  notificationChannel?: NotificationChannel;
+  tickersOfInterest?: string[];
+}
+
 // ─── Errores estándar ───────────────────────────────────────────────────────
 
 export interface FieldErrorItem {

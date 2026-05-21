@@ -40,6 +40,14 @@ const MESSAGES: Record<string, string> = {
     'Has alcanzado el máximo de reenvíos. Por favor inicia sesión de nuevo.',
   TOKEN_EXPIRED: 'Tu sesión expiró. Inicia sesión de nuevo.',
   TOKEN_INVALID: 'Tu sesión no es válida. Inicia sesión de nuevo.',
+
+  // ── HU-F04 + HU-F20 (perfil + canal de notificación) ────────────────────
+  READ_ONLY_FIELD_MODIFIED: 'Ese campo no puede ser modificado desde el perfil.',
+  INVALID_TICKER: 'El ticker seleccionado no está en el catálogo permitido.',
+  TOO_MANY_TICKERS: 'No puedes seleccionar más de 25 tickers.',
+  DUPLICATE_TICKERS: 'La lista de tickers no puede contener duplicados.',
+  VALIDATION_INVALID_CHANNEL:
+    'Canal de notificación inválido (debe ser EMAIL, SMS o WHATSAPP).',
 };
 
 export function humanFor(code: string): string {

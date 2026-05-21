@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/features/auth/context/AuthContext';
 
 /**
@@ -29,6 +29,12 @@ export function AppHeader() {
             </span>
           </span>
         )}
+        <Link
+          to="/profile"
+          className="text-slate-300 underline-offset-4 hover:text-white hover:underline"
+        >
+          Mi perfil
+        </Link>
         <button
           type="button"
           onClick={onLogout}

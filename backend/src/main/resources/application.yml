@@ -6,6 +6,13 @@ spring:
     name: bloomtrade
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
+  jackson:
+    deserialization:
+      # HU-F04+F20 D3: rechaza payloads con campos no declarados (ej. cliente intenta PATCH /me
+      # con "email": "x"). El GlobalExceptionHandler mapea UnrecognizedPropertyException a
+      # READ_ONLY_FIELD_MODIFIED con el field name. Los DTOs previos (RegisterRequest, LoginRequest,
+      # MfaVerify/Resend) ya tienen schemas estrictos — no se rompe nada.
+      fail-on-unknown-properties: true
   jpa:
     open-in-view: false   # CONVENTIONS: evita lazy-loading fuera de transacción
     hibernate:

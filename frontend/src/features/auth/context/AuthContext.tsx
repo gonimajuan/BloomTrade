@@ -25,6 +25,12 @@ export interface AuthContextValue {
   isAuthenticated: boolean;
   setSession: (token: string, user: UserSummary) => void;
   clearSession: () => void;
+  /**
+   * Actualización optimista del usuario en memoria (HU-F04+F20 D12). Tras un PATCH /me exitoso
+   * que cambie {@code nombreCompleto}, el header del app debe reflejarlo sin esperar al re-fetch.
+   * No llama al backend: el caller es responsable de mantener consistencia con la BD.
+   */
+  updateUser: (partial: Partial<UserSummary>) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -42,6 +48,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearSession = useCallback(() => {
     setAccessToken(null);
     setUser(null);
+  }, []);
+
+  const updateUser = useCallback((partial: Partial<UserSummary>) => {
+    setUser((prev) => (prev === null ? prev : { ...prev, ...partial }));
   }, []);
 
   // Mantiene sincronizado el interceptor del apiClient con el estado actual del provider.
@@ -63,8 +73,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: accessToken !== null,
       setSession,
       clearSession,
+      updateUser,
     }),
-    [user, accessToken, setSession, clearSession],
+    [user, accessToken, setSession, clearSession, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
