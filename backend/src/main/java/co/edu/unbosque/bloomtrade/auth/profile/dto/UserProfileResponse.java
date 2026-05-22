@@ -29,5 +29,6 @@ public record UserProfileResponse(
         UserStatus estado,
         NotificationChannel notificationChannel,
         List<String> tickersOfInterest,
+        boolean isPremium,
         Instant createdAt,
         Instant updatedAt) {}

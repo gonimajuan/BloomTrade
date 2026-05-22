@@ -5,8 +5,12 @@ import co.edu.unbosque.bloomtrade.audit.AuditEvent.AuditResult;
 import co.edu.unbosque.bloomtrade.audit.AuditEventType;
 import co.edu.unbosque.bloomtrade.audit.Auditor;
 import co.edu.unbosque.bloomtrade.notification.dto.AccountLockedEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.CancellationScheduledEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OtpEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.SubscriptionExpiredEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.SubscriptionPaymentFailedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.WelcomeEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.WelcomePremiumEmailCommand;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
@@ -33,6 +37,10 @@ public class MailNotifier implements Notifier {
     private static final String WELCOME_SUBJECT = "Bienvenido a BloomTrade";
     private static final String OTP_SUBJECT = "Tu código de acceso a BloomTrade";
     private static final String ACCOUNT_LOCKED_SUBJECT = "Cuenta bloqueada temporalmente";
+    private static final String WELCOME_PREMIUM_SUBJECT = "¡Bienvenido a BloomTrade Premium!";
+    private static final String CANCEL_SCHEDULED_SUBJECT = "Tu suscripción premium se cancelará pronto";
+    private static final String EXPIRED_SUBJECT = "Tu suscripción premium ha terminado";
+    private static final String PAYMENT_FAILED_SUBJECT = "Tu pago de renovación falló";
 
     private final JavaMailSender mailSender;
     private final SpringTemplateEngine templateEngine;
@@ -101,6 +109,75 @@ public class MailNotifier implements Notifier {
                 ctx,
                 AuditEventType.ACCOUNT_LOCKED_EMAIL_FAILED,
                 "account-locked-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendWelcomePremiumEmail(WelcomePremiumEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("plan", command.plan().name());
+        ctx.setVariable("currentPeriodEnd", command.currentPeriodEnd());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                WELCOME_PREMIUM_SUBJECT,
+                "email/welcome-premium",
+                ctx,
+                AuditEventType.WELCOME_PREMIUM_EMAIL_FAILED,
+                "welcome-premium-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendCancellationScheduledEmail(CancellationScheduledEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("currentPeriodEnd", command.currentPeriodEnd());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                CANCEL_SCHEDULED_SUBJECT,
+                "email/subscription-scheduled-to-cancel",
+                ctx,
+                AuditEventType.CANCELLATION_SCHEDULED_EMAIL_FAILED,
+                "cancellation-scheduled-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendSubscriptionExpiredEmail(SubscriptionExpiredEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("plan", command.plan().name());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                EXPIRED_SUBJECT,
+                "email/subscription-expired",
+                ctx,
+                AuditEventType.SUBSCRIPTION_EXPIRED_EMAIL_FAILED,
+                "subscription-expired-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendSubscriptionPaymentFailedEmail(SubscriptionPaymentFailedEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("plan", command.plan().name());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                PAYMENT_FAILED_SUBJECT,
+                "email/subscription-payment-failed",
+                ctx,
+                AuditEventType.SUBSCRIPTION_PAYMENT_FAILED_EMAIL_FAILED,
+                "subscription-payment-failed-email");
     }
 
     private void send(

@@ -5,6 +5,9 @@ import { LoginPage } from './pages/LoginPage';
 import { MFAVerifyPage } from './pages/MFAVerifyPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { PremiumPage } from './pages/PremiumPage';
+import { PremiumSuccessPage } from './pages/PremiumSuccessPage';
+import { PremiumCancelPage } from './pages/PremiumCancelPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { useAuth } from './features/auth/context/AuthContext';
 
@@ -33,6 +36,30 @@ function App() {
         element={
           <ProtectedRoute>
             <ProfilePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/premium"
+        element={
+          <ProtectedRoute>
+            <PremiumPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/premium/success"
+        element={
+          <ProtectedRoute>
+            <PremiumSuccessPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/premium/cancel"
+        element={
+          <ProtectedRoute>
+            <PremiumCancelPage />
           </ProtectedRoute>
         }
       />

@@ -28,6 +28,7 @@
         <logstash-logback.version>7.4</logstash-logback.version>
         <wiremock.version>3.9.1</wiremock.version>
         <jacoco.version>0.8.12</jacoco.version>
+        <stripe-java.version>28.0.0</stripe-java.version>
     </properties>
 
     <dependencies>
@@ -113,6 +114,13 @@
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-spring-boot3</artifactId>
             <version>${resilience4j.version}</version>
+        </dependency>
+
+        <!-- ─── Stripe (STACK.md §2.3 — HU-F06 Suscripción premium) ────────────── -->
+        <dependency>
+            <groupId>com.stripe</groupId>
+            <artifactId>stripe-java</artifactId>
+            <version>${stripe-java.version}</version>
         </dependency>
 
         <!-- ─── Logging JSON (STACK.md §2.3 — usado en T07) ────────────────────── -->

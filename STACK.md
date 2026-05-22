@@ -76,6 +76,7 @@ Razones de la elección sobre las otras opciones permitidas (Python, Go, .NET):
 | `logstash-logback-encoder` | 7.x | Logs en JSON para ingesta directa a ELK |
 | `testcontainers` | 1.19.x | Tests de integración con PostgreSQL/Redis reales |
 | `wiremock` | 3.x | Mock de Alpaca, Polygon, Stripe, Twilio en tests |
+| `stripe-java` | 28.0.x | SDK oficial Stripe — Checkout Sessions, Subscriptions, Customer Portal, webhook signature verification (HU-F06) |
 
 **Política de nuevas dependencias:** cualquier librería no listada aquí requiere actualizar este archivo en el mismo PR que la introduce.
 

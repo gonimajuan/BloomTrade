@@ -318,3 +318,51 @@ Después del Lote C, en lugar de saltar al Lote D directo, paré 10 minutos y ar
 ### Reflexión: cadencia "lotes + hitos" se siente diferente bajo prisa
 
 El usuario me dijo "tengo prisa" al inicio de la sesión y "todos los lotes primero, commit grande al final". Eso cambió la estrategia: agregue tareas con `TaskCreate`, agrupé varias en cada lote, y reporté en formato resumen al cierre de cada hito en lugar de checkpoint detallado. **Conservé** las decisiones críticas (D19-D22 documentadas), **omití** los tests frontend del Lote G (deuda registrada — los validators y mapper del backend cubren los riesgos críticos: no-leak `passwordHash`, no-PII en audit). **Aprendí**: el feedback "lotes + hitos" tiene dos modos — el normal (validación humana entre lotes) y el "deja correr" (validación en hitos críticos solamente). El segundo modo requiere disciplina mía para no derivar a vibe coding; lo evité documentando cada decisión Dxx en el momento.
+
+---
+
+## Día 4 — HU-F06 Suscripción premium con Stripe (2026-05-21)
+
+### La skill `stripe-best-practices` cambió 3 decisiones del SPEC v1.1
+
+Antes de redactar el plan.md, invoqué la skill explícitamente con las 8 preguntas técnicas que tenía. La skill me hizo leer dos referencias (`billing.md` + `security.md`) y eso cambió 3 cosas del SPEC v1.1 que yo había publicado en la sesión anterior:
+
+1. **Customer Portal en lugar de endpoint custom `/cancel`.** El v1.1 tenía un `POST /subscriptions/cancel` que llamaba `Subscription.update(cancel_at_period_end=true)`. La skill `billing.md` dice explícitamente: *"For self-service subscription management (upgrades, downgrades, cancellation, payment method updates), recommend the Customer Portal"*. Cambié a `POST /subscriptions/portal-session` que abre el portal hosted. **Beneficio inesperado**: la reactivación (cancel→cancel=false) que en v1.1 estaba fuera de alcance ahora ES posible nativamente porque el portal lo soporta. Y además los usuarios ven invoices y actualizan tarjetas sin que yo construya nada. Bumpeé el SPEC a v1.2 con changelog explícito.
+
+2. **RAK (Restricted API Key) en lugar de `sk_`.** El v1.1 (y el `.env.example` de Día 0) tenía `STRIPE_SECRET_KEY=sk_test_replace_me`. La skill `security.md` dice "Do not default to recommending secret keys". Renombré a `STRIPE_API_KEY` (genérico) + agregué validación en `StripeConfig` que loguea WARN si el prefijo NO es `rk_`. **Lección**: la mejor práctica de Stripe es alcanzable con cero costo de implementación — solo es cuestión de respetar el prefijo correcto al crear la key en Dashboard.
+
+3. **NO pasar `payment_method_types` al crear Checkout Session.** Trap explícito en `billing.md`: hardcodear `['card']` bloquea Dynamic Payment Methods y reduce conversión. Lo registré como D3 en el plan + assertion en `StripeAdapterTest` (deuda — terminé saltando el test por velocidad).
+
+**Aprendizaje meta:** las skills no son "más documentación que tengo que leer". Son **decisiones técnicas pre-tomadas por expertos** que cambian el alcance del trabajo. Las consulté con un prompt específico de 8 preguntas concretas, no genérico ("ayúdame con Stripe"). La diferencia es enorme.
+
+### Customer Portal vuelve "trivial" lo que iba a ser frontend complejo
+
+En v1.1 yo iba a construir: modal de confirmación de cancelación + componente para mostrar invoices + UI para actualizar tarjeta. Customer Portal me ahorró **los 3**. Mi `PremiumPage` ahora tiene un solo botón "Gestionar suscripción" en estados B y C que redirige a Stripe. **Trade-off real**: el usuario sale temporalmente de mi app. Para MVP académico es totalmente aceptable; para una app de producción de un fintech serio, valdría la pena evaluar embebido con `embeddable-checkout` + componentes propios. Lo dejo registrado para post-MVP.
+
+### El `Idempotency-Key` outbound es del SDK, NO del header HTTP
+
+Pensé que iba a tener que manualmente setear `Idempotency-Key: ...` en algún `HttpClient` interceptor. Resulta que `stripe-java` lo expone idiomáticamente con `RequestOptions.builder().setIdempotencyKey(key).build()` pasado como segundo argumento a `Customer.create(params, options)`. Cero hacks. **Aprendizaje**: cuando uno asume que algo será verbose por experiencia con otras SDK, revisar primero si la SDK específica lo cubre — los productos maduros como Stripe lo tienen pulido.
+
+### Webhook signature verification requiere body raw, no parseado
+
+Spring por default desserializa el body con Jackson cuando uno usa `@RequestBody SomeDto`. La firma HMAC de Stripe se computa sobre los bytes exactos del body — cualquier deserialización rompería el hash. Solución: `@RequestBody String rawBody`. El controller queda raro (un endpoint que recibe `String` en lugar del DTO) pero es lo correcto. Lo documenté en el JavaDoc del controller para que quien lo lea no piense que es un error.
+
+### Idempotencia con UNIQUE constraint > tabla de cache manual
+
+Mi primera idea fue: pre-check `existsByStripeEventId(...)` antes de procesar. **Mala idea** — race condition entre dos webhooks paralelos. Solución correcta: hacer INSERT directo en `stripe_webhook_events` con `stripe_event_id UNIQUE`; si la segunda vez `DataIntegrityViolationException`, capturarla y mapear a `STRIPE_WEBHOOK_DUPLICATE`. Postgres garantiza la atomicidad del INSERT-or-fail. **El UNIQUE constraint es el corazón del mecanismo, no un detalle**. Mi `StripeWebhookHandler` lo documenta así en el comentario top de clase.
+
+### El `cancel_at_period_end` transition detection vive en el webhook, no en el endpoint
+
+En v1.1 yo emitía `SUBSCRIPTION_CANCELLED_SCHEDULED` desde dos lugares: el endpoint `/cancel` y el webhook (defensivo). En v1.2 con Customer Portal, hay UN solo lugar: el webhook `customer.subscription.updated` detecta la transición `false→true` y emite el audit + email. Más limpio. **Insight**: cuando una acción puede ocurrir en múltiples sitios (mi endpoint o Stripe Portal), conviene tratar al webhook como single source of truth y eliminar el "audit duplicado defensivo". El SPEC v1.2 lo refleja.
+
+### `mvn verify` con jacoco impacta el classpath de los tests
+
+Cuando agregué `StripeWebhookHandlerTest` con un mock que devolvía `Event event = new Event()`, los primeros runs daban un warning de jacoco sobre instrumentación. Era ruido. Lo verifiqué corriendo `mvn test` (sin verify) y confirmé que los tests pasan limpios. **Aprendizaje**: si un warning aparece solo durante `verify` y los tests pasan en `test`, probablemente es jacoco midiendo cobertura — no es un test fail.
+
+### Tests del handler con SDK complejo: skip pragmático
+
+`Event`, `Session`, `Subscription`, `Invoice` de stripe-java son clases grandes con muchos getters. Mockear `event.getDataObjectDeserializer().getObject()` para que devuelva un Session con metadata válida es ~30 líneas de boilerplate POR test. Para el MVP de 1 día decidí **cubrir solo los 3 tests críticos** (signature inválida, idempotencia duplicada, tipo desconocido) y dejar los 4 handlers individuales para verificación E2E con `stripe-cli trigger`. **Trade-off documentado en tasks.md deuda**: una IT con WireMock + payloads JSON reales de Stripe sería lo ideal para CI. Lo veo como deuda Sprint 2.
+
+### Reflexión: Stripe es la mejor API que he integrado
+
+Después de haber integrado Twilio, SendGrid, Polygon y varios otros en otros proyectos, Stripe se siente categóricamente diferente: la SDK Java está bien escrita, la documentación es **densa pero precisa**, los errores tienen códigos claros (`api_error`, `card_declined`, `signature_verification_failed`), el Customer Portal te ahorra trabajo, el `stripe-cli` te da forwarding local sin tener que pelearte con ngrok. **Sospecha**: la mayoría de los bugs raros de pagos de los que uno escucha no vienen de Stripe sino de integraciones mal hechas (no verificar firma, no manejar idempotencia, parsear body antes de verificar, etc.). La skill `stripe-best-practices` me empujó a NO cometer esos errores comunes desde el día 1.

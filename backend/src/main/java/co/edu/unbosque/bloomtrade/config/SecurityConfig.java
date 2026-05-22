@@ -47,6 +47,10 @@ public class SecurityConfig {
                         "/api/v1/auth/mfa/verify",
                         "/api/v1/auth/mfa/resend")
                 .permitAll()
+                // HU-F06 webhook de Stripe: autentica vía HMAC del header Stripe-Signature
+                // (verificación de firma en el handler), NO vía JWT. Exento del filtro de auth.
+                .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/stripe")
+                .permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

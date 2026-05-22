@@ -10,6 +10,7 @@ import co.edu.unbosque.bloomtrade.auth.profile.dto.UpdateProfileRequest;
 import co.edu.unbosque.bloomtrade.auth.profile.dto.UserProfileResponse;
 import co.edu.unbosque.bloomtrade.auth.profile.mapper.UserProfileMapper;
 import co.edu.unbosque.bloomtrade.auth.repository.UserRepository;
+import co.edu.unbosque.bloomtrade.auth.subscription.service.SubscriptionService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -40,20 +41,23 @@ public class ProfileService {
     private final UserRepository userRepository;
     private final UserProfileMapper userProfileMapper;
     private final Auditor auditor;
+    private final SubscriptionService subscriptionService;
 
     public ProfileService(
             UserRepository userRepository,
             UserProfileMapper userProfileMapper,
-            Auditor auditor) {
+            Auditor auditor,
+            SubscriptionService subscriptionService) {
         this.userRepository = userRepository;
         this.userProfileMapper = userProfileMapper;
         this.auditor = auditor;
+        this.subscriptionService = subscriptionService;
     }
 
     @Transactional(readOnly = true)
     public UserProfileResponse getMe(UUID userId) {
         User user = loadOrThrow(userId);
-        return userProfileMapper.toResponse(user);
+        return userProfileMapper.toResponse(user, subscriptionService.isPremium(userId));
     }
 
     @Transactional
@@ -72,7 +76,7 @@ public class ProfileService {
             List<String> changedFields = before.diff(after);
 
             if (changedFields.isEmpty()) {
-                return userProfileMapper.toResponse(user);
+                return userProfileMapper.toResponse(user, subscriptionService.isPremium(userId));
             }
 
             // Hibernate detecta el dirty state y emite UPDATE al commit.
@@ -101,7 +105,7 @@ public class ProfileService {
                                 .build());
             }
 
-            return userProfileMapper.toResponse(user);
+            return userProfileMapper.toResponse(user, subscriptionService.isPremium(userId));
         } catch (DataAccessException e) {
             log.error("Error técnico actualizando perfil del usuario {}", userId, e);
             auditor.record(

@@ -80,6 +80,9 @@ public class User {
     @Column(name = "tickers_of_interest", nullable = false, columnDefinition = "jsonb")
     private List<String> tickersOfInterest;
 
+    @Column(name = "stripe_customer_id", length = 50)
+    private String stripeCustomerId;
+
     @Column(name = "acepto_terminos_at", nullable = false)
     private Instant aceptoTerminosAt;
 
@@ -161,5 +164,20 @@ public class User {
     /** Vista inmutable del listado de tickers — evita exposición mutable del estado interno. */
     public List<String> getTickersOfInterest() {
         return Collections.unmodifiableList(this.tickersOfInterest);
+    }
+
+    /**
+     * Asocia un Stripe Customer al usuario al primer checkout (HU-F06). Idempotente: si ya
+     * existe un {@code stripeCustomerId}, no se sobreescribe — el customer de Stripe es
+     * reusable y se mantiene el original. Este método es el ÚNICO punto autorizado para
+     * mutar {@code stripeCustomerId} desde fuera del agregado.
+     */
+    public void linkStripeCustomer(String customerId) {
+        if (customerId == null || customerId.isBlank()) {
+            throw new IllegalArgumentException("stripeCustomerId no puede ser nulo o vacío");
+        }
+        if (this.stripeCustomerId == null) {
+            this.stripeCustomerId = customerId;
+        }
     }
 }

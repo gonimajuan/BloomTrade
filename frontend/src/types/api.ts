@@ -82,8 +82,42 @@ export interface UserProfileResponse {
   estado: UserStatus;
   notificationChannel: NotificationChannel;
   tickersOfInterest: string[];
+  isPremium: boolean; // HU-F06 G5 — agregado por la integración de subscription
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── HU-F06 (suscripción premium con Stripe) ────────────────────────────────
+
+export type BillingPlan = 'MONTHLY' | 'YEARLY';
+export type SubscriptionStatus = 'ACTIVE' | 'CANCELLED' | 'PAST_DUE';
+
+export interface CheckoutSessionRequest {
+  plan: BillingPlan;
+}
+
+export interface CheckoutSessionResponse {
+  checkoutUrl: string;
+  sessionId: string;
+}
+
+export interface PortalSessionResponse {
+  portalUrl: string;
+}
+
+export interface SubscriptionDto {
+  id: string;
+  plan: BillingPlan;
+  status: SubscriptionStatus;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  cancelAtPeriodEnd: boolean;
+  createdAt: string;
+}
+
+export interface SubscriptionStatusResponse {
+  isPremium: boolean;
+  subscription: SubscriptionDto | null;
 }
 
 /** Todos los campos son opcionales: `null`/ausente = no enviar; lista vacía = limpiar. */
