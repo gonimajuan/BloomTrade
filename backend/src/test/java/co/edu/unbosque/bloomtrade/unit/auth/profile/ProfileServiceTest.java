@@ -3,6 +3,8 @@ package co.edu.unbosque.bloomtrade.unit.auth.profile;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -19,6 +21,7 @@ import co.edu.unbosque.bloomtrade.auth.profile.dto.UserProfileResponse;
 import co.edu.unbosque.bloomtrade.auth.profile.mapper.UserProfileMapper;
 import co.edu.unbosque.bloomtrade.auth.profile.service.ProfileService;
 import co.edu.unbosque.bloomtrade.auth.repository.UserRepository;
+import co.edu.unbosque.bloomtrade.auth.subscription.service.SubscriptionService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -41,12 +44,15 @@ class ProfileServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private UserProfileMapper mapper;
     @Mock private Auditor auditor;
+    @Mock private SubscriptionService subscriptionService;
 
     private ProfileService service;
 
     @BeforeEach
     void setUp() {
-        service = new ProfileService(userRepository, mapper, auditor);
+        service = new ProfileService(userRepository, mapper, auditor, subscriptionService);
+        // Default no-premium; los tests que lo necesiten lo override-an.
+        lenient().when(subscriptionService.isPremium(USER_ID)).thenReturn(false);
     }
 
     private User sampleUser() {
@@ -75,6 +81,7 @@ class ProfileServiceTest {
                 user.getEstado(),
                 user.getNotificationChannel(),
                 user.getTickersOfInterest(),
+                false, // isPremium
                 Instant.now(),
                 Instant.now());
     }
@@ -84,7 +91,7 @@ class ProfileServiceTest {
         User user = sampleUser();
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         UserProfileResponse expected = stubResponse(user);
-        when(mapper.toResponse(user)).thenReturn(expected);
+        when(mapper.toResponse(user, false)).thenReturn(expected);
 
         UserProfileResponse result = service.getMe(USER_ID);
 
@@ -96,7 +103,7 @@ class ProfileServiceTest {
     void shouldUpdateSingleFieldAndAuditPROFILE_UPDATED() {
         User user = sampleUser();
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
-        when(mapper.toResponse(user)).thenReturn(stubResponse(user));
+        when(mapper.toResponse(user, false)).thenReturn(stubResponse(user));
         UpdateProfileRequest req =
                 new UpdateProfileRequest("Juan Carlos Pérez", null, null, null);
 
@@ -117,7 +124,7 @@ class ProfileServiceTest {
     void shouldEmitTwoEventsWhenNotificationChannelChanges() {
         User user = sampleUser();
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
-        when(mapper.toResponse(user)).thenReturn(stubResponse(user));
+        when(mapper.toResponse(user, false)).thenReturn(stubResponse(user));
         UpdateProfileRequest req =
                 new UpdateProfileRequest(null, null, NotificationChannel.WHATSAPP, null);
 
@@ -139,7 +146,7 @@ class ProfileServiceTest {
     void shouldUpdateMultipleFieldsAndListAllChangedFields() {
         User user = sampleUser();
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
-        when(mapper.toResponse(user)).thenReturn(stubResponse(user));
+        when(mapper.toResponse(user, false)).thenReturn(stubResponse(user));
         UpdateProfileRequest req =
                 new UpdateProfileRequest(
                         "Juan Carlos",
@@ -165,7 +172,7 @@ class ProfileServiceTest {
     void shouldBeIdempotentWhenNoFieldEffectivelyChanges() {
         User user = sampleUser();
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
-        when(mapper.toResponse(user)).thenReturn(stubResponse(user));
+        when(mapper.toResponse(user, false)).thenReturn(stubResponse(user));
         // Mismo nombre que ya tiene + null en el resto = no-op
         UpdateProfileRequest req =
                 new UpdateProfileRequest(user.getNombreCompleto(), null, null, null);
@@ -180,7 +187,7 @@ class ProfileServiceTest {
         User user = sampleUser();
         String originalName = user.getNombreCompleto();
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
-        when(mapper.toResponse(user)).thenReturn(stubResponse(user));
+        when(mapper.toResponse(user, false)).thenReturn(stubResponse(user));
         UpdateProfileRequest req =
                 new UpdateProfileRequest("Juan Carlos Pérez García", "+573109876543", null, null);
 
@@ -206,7 +213,7 @@ class ProfileServiceTest {
         // Forzamos error en el mapper post-update para simular fallo BD.
         DataAccessResourceFailureException dbError =
                 new DataAccessResourceFailureException("Postgres unreachable");
-        when(mapper.toResponse(user)).thenThrow(dbError);
+        when(mapper.toResponse(user, false)).thenThrow(dbError);
         UpdateProfileRequest req =
                 new UpdateProfileRequest("Juan Carlos", null, null, null);
 

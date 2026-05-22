@@ -12,8 +12,8 @@
 | Estado | Ready |
 | Autor | Juan |
 | Fecha creación | 2026-05-08 |
-| Última actualización | 2026-05-20 |
-| Versión spec | 1.1 |
+| Última actualización | 2026-05-21 |
+| Versión spec | 1.2 |
 | Día estimado del ROADMAP | Día 4 |
 
 ---
@@ -159,29 +159,33 @@ Es la primera integración real con API externa del MVP y la única del Sprint 1
 
 ### 5.2 Flujos alternativos
 
-#### 5.2.1 Cancelación de suscripción (programada)
+#### 5.2.1 Cancelación de suscripción vía Customer Portal (v1.2)
 
-**Cuándo se activa:** Usuario presiona "Cancelar suscripción" en `/premium`
+**Cuándo se activa:** Usuario presiona "Gestionar suscripción" en `/premium`
 
-1. Frontend muestra modal de confirmación: "Tu acceso premium continúa hasta {currentPeriodEnd}. ¿Confirmas la cancelación?"
-2. Usuario confirma
-3. Frontend envía `POST /api/v1/subscriptions/cancel`
-4. `JwtAuthenticationFilter` valida el JWT y `SubscriptionController` resuelve el `userId` desde `SecurityContextHolder` (igual que §5.1 paso 6)
-5. Backend consulta `app.subscriptions` por `user_id` con `status = ACTIVE`
-6. Si no encuentra: devuelve 404 `NO_ACTIVE_SUBSCRIPTION`
-7. Backend invoca `StripeAdapter.cancelSubscriptionAtPeriodEnd(stripe_subscription_id)`
-8. Stripe marca `cancel_at_period_end = true` y responde con `Subscription` actualizada
-9. Backend actualiza `app.subscriptions`: `cancel_at_period_end = true` (status permanece ACTIVE)
-10. Backend dispara email "Tu suscripción se cancelará el {currentPeriodEnd}"
-11. Backend emite evento `SUBSCRIPTION_CANCELLED_SCHEDULED` a AuditService
-12. Backend responde 200 con la suscripción actualizada
+> **Decisión v1.2 (skill `stripe-best-practices`):** La cancelación se delega al **Customer Portal hosted por Stripe** en lugar de implementar un endpoint propio. Razón: Stripe ya provee UI completa para cancelar, ver/descargar invoices y actualizar método de pago. La skill `billing.md` lo recomienda explícitamente para self-service. Esto **elimina** el endpoint `POST /subscriptions/cancel` y su modal de confirmación frontend.
 
-**Asíncronamente:** Stripe envía webhook `customer.subscription.updated` (manejado en §5.2.2)
+1. Frontend envía `POST /api/v1/subscriptions/portal-session`
+2. `JwtAuthenticationFilter` valida el JWT y `SubscriptionController` resuelve el `userId` desde `SecurityContextHolder`
+3. Backend consulta `app.users.stripe_customer_id` del usuario; si es `NULL` devuelve 409 `NO_STRIPE_CUSTOMER` (el usuario nunca pasó por un checkout — no tiene nada que gestionar)
+4. Backend invoca `StripeAdapter.createBillingPortalSession(customerId, returnUrl="{FRONTEND_URL}/premium")` con `Idempotency-Key` por request
+5. Stripe responde con `Session` que incluye `url` (URL hosted del portal, válida 5 min)
+6. Backend emite evento `BILLING_PORTAL_SESSION_CREATED` a AuditService
+7. Backend responde 200 con `{ portalUrl: session.url }`
+8. Frontend redirige al usuario a `portalUrl` (saliendo de la app)
+
+**En el portal de Stripe**, el usuario puede:
+- Cancelar (Stripe setea `cancel_at_period_end=true`)
+- Reactivar antes del fin de período (Stripe setea `cancel_at_period_end=false`)
+- Actualizar tarjeta
+- Descargar invoices
+
+Cada acción dispara el webhook correspondiente (§5.2.2 para cancel, etc.) que sincroniza `app.subscriptions`. **El email "se cancelará el X" se emite cuando el webhook detecta la transición**, no desde un endpoint propio.
 
 **Postcondiciones:**
-- `cancel_at_period_end = true` en `app.subscriptions`
-- `status` permanece `ACTIVE` — el usuario mantiene acceso premium hasta `currentPeriodEnd`
-- Email de confirmación enviado
+- Sesión del portal creada y consumida por el usuario
+- Cualquier cambio efectivo (cancel, update, etc.) llega vía webhook y se sincroniza en §5.2.2/§5.2.3
+- Sin estado intermedio en `app.subscriptions` por esta sola request
 
 #### 5.2.2 Procesamiento de webhook `customer.subscription.updated`
 
@@ -195,9 +199,9 @@ Es la primera integración real con API externa del MVP y la única del Sprint 1
     - `status` (mapea del status de Stripe al enum interno)
     - `cancel_at_period_end`
     - `current_period_end` (si cambió)
-6. Backend detecta transición de interés:
-    - Si `cancel_at_period_end` pasó de `false` a `true`: emite `SUBSCRIPTION_CANCELLED_SCHEDULED` (idempotente — pudo haber sido emitido ya por el endpoint de cancelación; el audit log acepta duplicados con diferentes timestamps)
-    - Si pasó de `true` a `false`: usuario revirtió la cancelación (caso raro, no manejado en UI MVP)
+6. Backend detecta transición de interés (v1.2 — el portal es la única fuente):
+    - Si `cancel_at_period_end` pasó de `false` a `true`: emite `SUBSCRIPTION_CANCELLED_SCHEDULED` y dispara email "Tu suscripción se cancelará el {currentPeriodEnd}" (este email se emitía antes desde el endpoint /cancel; v1.2 lo mueve al webhook handler porque el portal es ahora la fuente única de la acción)
+    - Si `cancel_at_period_end` pasó de `true` a `false`: usuario reactivó la suscripción desde el portal. Emite `SUBSCRIPTION_REACTIVATED` y dispara email "Tu suscripción premium continúa activa"
 7. Backend hace COMMIT y responde 200 a Stripe
 
 #### 5.2.3 Procesamiento de webhook `customer.subscription.deleted`
@@ -287,10 +291,10 @@ Es la primera integración real con API externa del MVP y la única del Sprint 1
 **Estado final:** Sin cambios
 **Evento de auditoría:** `STRIPE_WEBHOOK_ORPHAN` con `details.stripeSubscriptionId`, `details.eventType` (severidad WARNING en logs)
 
-#### 5.3.7 Usuario intenta cancelar sin suscripción activa
+#### 5.3.7 Usuario intenta abrir el Customer Portal sin Stripe customer (v1.2)
 
-**Cuándo se dispara:** `POST /subscriptions/cancel` cuando no hay fila `ACTIVE`
-**Respuesta:** HTTP 404 Not Found con código `NO_ACTIVE_SUBSCRIPTION`
+**Cuándo se dispara:** `POST /subscriptions/portal-session` cuando `app.users.stripe_customer_id` es `NULL` (el usuario nunca pasó por un checkout; no tiene nada que gestionar en Stripe)
+**Respuesta:** HTTP 409 Conflict con código `NO_STRIPE_CUSTOMER`. La UI debe mostrarle el flujo de checkout en lugar del portal.
 **Estado final:** Sin cambios
 
 #### 5.3.8 Usuario abandona el checkout en Stripe
@@ -316,6 +320,10 @@ Es la primera integración real con API externa del MVP y la única del Sprint 1
 #### 6.1.1 `POST /api/v1/subscriptions/checkout-session`
 
 **Propósito:** Crear una Checkout Session en Stripe y devolver la URL para que el frontend redirija al usuario.
+
+> **Trap (skill `billing.md`):** la llamada `checkout.sessions.create` **NO** debe incluir `payment_method_types`. Omitir ese parámetro habilita Dynamic Payment Methods — Stripe selecciona los métodos óptimos según el cliente y los settings del Dashboard. Hardcodear `['card']` bloquea conversión y es anti-patrón explícito.
+>
+> **Idempotency-Key:** la llamada saliente lleva header `Idempotency-Key: {userId}:checkout:{nonce}` para que un doble-click del usuario no cree dos sesiones (skill `references/payments.md` patrón estándar).
 
 **Auth requerido:** Sí
 
@@ -445,37 +453,38 @@ components:
 
 > **Datos sensibles ocultos:** la respuesta de `GET /subscriptions/me` NUNCA incluye `stripe_customer_id` ni `stripe_subscription_id`. Esos son detalles internos de la integración y no deben filtrar al cliente.
 
-#### 6.1.3 `POST /api/v1/subscriptions/cancel`
+#### 6.1.3 `POST /api/v1/subscriptions/portal-session` (v1.2)
 
-**Propósito:** Programar la cancelación de la suscripción activa al fin del período.
+**Propósito:** Crear una **Customer Portal Session** en Stripe y devolver la URL para que el frontend redirija al usuario. El portal cubre cancelar, reactivar, actualizar tarjeta y ver invoices — todo hosted por Stripe.
 
 **Auth requerido:** Sí
 
 ```yaml
 paths:
-  /api/v1/subscriptions/cancel:
+  /api/v1/subscriptions/portal-session:
     post:
-      summary: Programa cancelación al fin del período actual
+      summary: Inicia sesión del Customer Portal de Stripe
       tags: [Subscriptions]
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Cancelación programada exitosamente
+          description: Portal Session creada
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SubscriptionDto'
+                type: object
+                properties:
+                  portalUrl:
+                    type: string
+                    format: uri
+                    description: URL hosted por Stripe; el frontend debe redirigir aquí. Vence en ~5 min.
               example:
-                id: "f47ac10b-..."
-                plan: "MONTHLY"
-                status: "ACTIVE"
-                currentPeriodEnd: "2026-06-08T14:32:18Z"
-                cancelAtPeriodEnd: true
+                portalUrl: "https://billing.stripe.com/p/session/test_..."
         '401':
           description: No autenticado
-        '404':
-          description: No hay suscripción activa para cancelar
+        '409':
+          description: El usuario no tiene Customer en Stripe (nunca pasó por checkout)
         '502':
           description: Stripe API no responde
 ```
@@ -690,8 +699,10 @@ No aplica.
 |---|---|---|
 | `CHECKOUT_SESSION_CREATED` | POST /subscriptions/checkout-session exitoso | `{ plan, stripeSessionId, stripeCustomerId }` |
 | `CHECKOUT_SESSION_FAILED` | Error al crear checkout | `{ reason, stripeErrorCode }` |
+| `BILLING_PORTAL_SESSION_CREATED` (v1.2) | POST /subscriptions/portal-session exitoso | `{ stripeCustomerId }` |
 | `SUBSCRIPTION_ACTIVATED` | Webhook checkout.session.completed procesado | `{ subscriptionId, plan, periodEnd, stripeSubscriptionId }` |
-| `SUBSCRIPTION_CANCELLED_SCHEDULED` | Usuario presiona cancelar O webhook detecta cancel_at_period_end=true | `{ subscriptionId, periodEnd, source: "USER_REQUEST" \| "WEBHOOK" }` |
+| `SUBSCRIPTION_CANCELLED_SCHEDULED` | Webhook detecta `cancel_at_period_end=false→true` (siempre desde portal, v1.2) | `{ subscriptionId, periodEnd }` |
+| `SUBSCRIPTION_REACTIVATED` (v1.2) | Webhook detecta `cancel_at_period_end=true→false` | `{ subscriptionId, periodEnd }` |
 | `SUBSCRIPTION_TERMINATED` | Webhook customer.subscription.deleted procesado | `{ subscriptionId, reason: "PERIOD_END" \| "OTHER" }` |
 | `SUBSCRIPTION_PAYMENT_FAILED` | Webhook invoice.payment_failed procesado | `{ subscriptionId, stripeInvoiceId }` |
 | `STRIPE_WEBHOOK_RECEIVED` | Webhook llegó al endpoint (post signature validation) | `{ stripeEventId, eventType }` |
@@ -722,7 +733,8 @@ No aplica directamente. Sin embargo: la flag `isPremium` en `UserProfileResponse
 | Stripe API | `customers.create` | StripeAdapter | Primera vez que un usuario inicia checkout (si `stripe_customer_id` es null) |
 | Stripe API | `checkout.sessions.create` | StripeAdapter | Cada POST /subscriptions/checkout-session exitoso |
 | Stripe API | `subscriptions.retrieve` | StripeAdapter | Cada webhook `checkout.session.completed` (para obtener detalles del Subscription) |
-| Stripe API | `subscriptions.update` (cancel_at_period_end=true) | StripeAdapter | Cada POST /subscriptions/cancel |
+| Stripe API | `billingPortal.sessions.create` | StripeAdapter | Cada POST /subscriptions/portal-session (v1.2) |
+| Stripe API | `subscriptions.update` | (no se llama directamente — el Customer Portal lo hace; v1.2) | El backend ya no actualiza Subscriptions; el portal hace todas las mutaciones. |
 | Stripe API | `webhooks.constructEvent` (validación de firma) | StripeAdapter | Cada llamada a /webhooks/stripe (no es API call, es validación local con `stripe-java`) |
 
 > **RetryPolicy:** las 4 primeras (llamadas síncronas que pueden fallar por red) se envuelven en `RetryPolicy` de Resilience4j (3 reintentos a 1s, 3s, 5s — TAC-D2). La quinta (validación de firma) es local, no necesita retry.
@@ -797,17 +809,31 @@ Funcionalidad: Suscripción premium con Stripe
     Y NO se crea Checkout Session en Stripe
     Y NO se inserta nada en BD
 
-  Escenario: Cancelación programada de suscripción activa
+  Escenario: Cancelación programada vía Customer Portal (v1.2)
     Dado un usuario con suscripción ACTIVE, plan="MONTHLY", currentPeriodEnd=2026-06-08
-    Cuando envía POST /api/v1/subscriptions/cancel
-    Entonces el sistema invoca Stripe API para marcar cancel_at_period_end=true
-    Y actualiza app.subscriptions: cancel_at_period_end=true, status permanece "ACTIVE"
+    Cuando envía POST /api/v1/subscriptions/portal-session
+    Entonces el sistema invoca Stripe billingPortal.sessions.create
+    Y responde 200 con portalUrl
+    Y emite BILLING_PORTAL_SESSION_CREATED
+
+    Cuando el usuario cancela su suscripción en el portal de Stripe
+    Y Stripe envía webhook customer.subscription.updated con cancel_at_period_end=true
+    Entonces el backend procesa el evento
+    Y app.subscriptions tiene cancel_at_period_end=true, status permanece "ACTIVE"
     Y envía email "Tu suscripción se cancelará el 2026-06-08" a MailHog
     Y emite SUBSCRIPTION_CANCELLED_SCHEDULED
 
     Cuando el frontend hace GET /api/v1/subscriptions/me
     Entonces la respuesta indica isPremium=true (todavía premium hasta fin de período)
     Y subscription.cancelAtPeriodEnd=true
+
+  Escenario: Reactivación vía Customer Portal (v1.2)
+    Dado un usuario con suscripción ACTIVE y cancel_at_period_end=true
+    Cuando el usuario reactiva su suscripción en el portal de Stripe
+    Y Stripe envía webhook customer.subscription.updated con cancel_at_period_end=false
+    Entonces el backend procesa el evento
+    Y app.subscriptions tiene cancel_at_period_end=false, status "ACTIVE"
+    Y emite SUBSCRIPTION_REACTIVATED
 
   Escenario: Suscripción expira tras cancelación programada
     Dado un usuario con suscripción ACTIVE y cancel_at_period_end=true
@@ -860,10 +886,11 @@ Funcionalidad: Suscripción premium con Stripe
     Y NO reprocesa el evento (status del subscription no cambia)
     Y se emite STRIPE_WEBHOOK_DUPLICATE
 
-  Escenario: Cancelación sin suscripción activa
-    Dado un usuario sin suscripción ACTIVE
-    Cuando envía POST /api/v1/subscriptions/cancel
-    Entonces el sistema responde 404 con código NO_ACTIVE_SUBSCRIPTION
+  Escenario: Portal sin Stripe customer (v1.2)
+    Dado un usuario sin stripe_customer_id (nunca pasó por checkout)
+    Cuando envía POST /api/v1/subscriptions/portal-session
+    Entonces el sistema responde 409 con código NO_STRIPE_CUSTOMER
+    Y NO invoca Stripe
 
   Escenario: Stripe API caído al crear checkout
     Dado que Stripe API no responde (simulado con WireMock devolviendo 503)
@@ -938,7 +965,7 @@ Funcionalidad: Suscripción premium con Stripe
 | Banner verde | "Eres Premium 🌟" |
 | Plan actual | "Plan Mensual / Anual" |
 | Detalle | "Tu próximo cargo es el {currentPeriodEnd}" |
-| Botón secundario | "Cancelar suscripción" — abre modal de confirmación |
+| Botón secundario | "Gestionar suscripción" — redirige al Customer Portal de Stripe (v1.2). El usuario cancela, actualiza tarjeta o ve invoices ahí. Al volver, /premium re-fetch refleja los cambios sincronizados por webhook. |
 
 **Estado C: Suscripción ACTIVA con cancelación programada (cancelAtPeriodEnd=true)**
 
@@ -946,9 +973,8 @@ Funcionalidad: Suscripción premium con Stripe
 |---|---|
 | Banner amarillo | "Tu suscripción terminará el {currentPeriodEnd}" |
 | Plan actual | "Plan Mensual / Anual" |
-| Mensaje | "Mantienes acceso premium hasta esa fecha. Después podrás re-suscribirte cuando quieras." |
-| (Sin botón de cancelar — ya está cancelada) |
-| (Sin botón de reactivar — fuera de alcance del MVP) |
+| Mensaje | "Mantienes acceso premium hasta esa fecha. Puedes reactivar tu suscripción antes desde el portal de pagos." |
+| Botón "Gestionar suscripción" | Redirige al Customer Portal — el usuario puede reactivar (`cancel_at_period_end=false`) o cambiar tarjeta. v1.2 habilita reactivación que en v1.1 estaba fuera de alcance. |
 
 **Estado D: Suscripción CANCELLED o PAST_DUE**
 
@@ -957,21 +983,7 @@ Funcionalidad: Suscripción premium con Stripe
 | Banner gris (CANCELLED) o rojo (PAST_DUE) | "Tu suscripción premium terminó" / "Tu pago falló y perdiste acceso premium" |
 | Estado idéntico a A (cards de planes con botones de re-activación) |
 
-**Modal de confirmación de cancelación:**
-
-```
-┌──────────────────────────────────────────────┐
-│ ¿Cancelar tu suscripción premium?            │
-├──────────────────────────────────────────────┤
-│                                              │
-│ Tu acceso premium continuará hasta el        │
-│ {currentPeriodEnd}. No se hará ningún cargo  │
-│ adicional. Podrás re-suscribirte cuando      │
-│ quieras.                                     │
-│                                              │
-│       [Mantener premium] [Sí, cancelar]      │
-└──────────────────────────────────────────────┘
-```
+**Modal de confirmación de cancelación:** ELIMINADO en v1.2. La cancelación ocurre en el Customer Portal de Stripe; el modal nativo del portal cumple esta función (con mensajes propios de Stripe).
 
 #### Página `/premium/success`
 
@@ -1001,7 +1013,7 @@ Funcionalidad: Suscripción premium con Stripe
 | `PremiumPage` | `src/pages/PremiumPage.tsx` | Orquesta los 4 estados (A, B, C, D) |
 | `PremiumPlanCard` | `src/features/subscription/components/PremiumPlanCard.tsx` | Card de plan con precio y botón |
 | `PremiumStatusBanner` | `src/features/subscription/components/PremiumStatusBanner.tsx` | Banner según estado (verde/amarillo/rojo/gris) |
-| `CancelSubscriptionModal` | `src/features/subscription/components/CancelSubscriptionModal.tsx` | Modal de confirmación |
+| ~~`CancelSubscriptionModal`~~ | — | ELIMINADO v1.2 — la cancelación vive en el Customer Portal |
 | `PremiumSuccessPage` | `src/pages/PremiumSuccessPage.tsx` | Página /premium/success con polling |
 | `PremiumCancelPage` | `src/pages/PremiumCancelPage.tsx` | Página /premium/cancel |
 
@@ -1011,7 +1023,7 @@ Funcionalidad: Suscripción premium con Stripe
 |---|---|---|
 | `useSubscription` | `src/features/subscription/hooks/useSubscription.ts` | React Query: GET /subscriptions/me con polling configurable |
 | `useStartCheckout` | `src/features/subscription/hooks/useStartCheckout.ts` | Mutation: POST /subscriptions/checkout-session + redirección a checkoutUrl |
-| `useCancelSubscription` | `src/features/subscription/hooks/useCancelSubscription.ts` | Mutation: POST /subscriptions/cancel + invalidación de cache |
+| `useOpenBillingPortal` (v1.2) | `src/features/subscription/hooks/useOpenBillingPortal.ts` | Mutation: POST /subscriptions/portal-session + redirige a portalUrl. Reemplaza al `useCancelSubscription` de v1.1. |
 
 ### 12.4 Cambios de routing
 
@@ -1033,11 +1045,11 @@ Agregar entrada "Premium" o "Mi plan" en el menú del `AppHeader` (introducido e
 - **Grace period en PAST_DUE** — downgrade inmediato en MVP (decisión registrada)
 - **Cupones, descuentos, trials gratis** — fuera del MVP
 - **Notificación de "tu tarjeta vence pronto"** — Stripe ya envía estos emails automáticamente desde su dashboard; BloomTrade no replica
-- **Receipt/invoice descargable desde la app** — Stripe envía estos por email; no se replica en UI
+- **Receipt/invoice descargable desde la app** — Stripe envía estos por email + accesible vía Customer Portal (v1.2); no se replica en UI propia
 - **Multi-divisa** — solo USD
 - **Suscripciones empresariales o de grupo** — fuera del MVP
 - **Enforcement de premium en endpoints específicos** — no hay endpoints premium aún en MVP; el estado se persiste y queda listo para HU-F19/F23
-- **Reactivar suscripción antes de que termine el período (deshacer cancel_at_period_end)** — fuera del MVP; el usuario debe esperar a que termine y re-suscribirse
+- ~~**Reactivar suscripción antes de que termine el período**~~ — **AHORA SÍ está dentro de alcance** (v1.2): el Customer Portal lo permite nativamente y el webhook `customer.subscription.updated` sincroniza el estado vía evento `SUBSCRIPTION_REACTIVATED`
 
 ---
 
@@ -1050,7 +1062,9 @@ Ninguna. Todas las decisiones críticas resueltas previo a la redacción de esta
 ## 15. Definition of Done específica de esta spec
 
 - ☐ Migración Flyway `V4__subscriptions.sql` creada y aplicada
-- ☐ Los 4 endpoints documentados en Swagger UI
+- ☐ Los 4 endpoints documentados en Swagger UI (v1.2: `/checkout-session`, `/me`, `/portal-session`, `/webhooks/stripe`)
+- ☐ La llamada `checkout.sessions.create` **NO** incluye `payment_method_types` (DPM habilitado — verificable en código)
+- ☐ Usa **Restricted API Key (RAK `rk_test_...`)** con permisos mínimos: Customers (write), Checkout Sessions (write), Subscriptions (write), Billing Portal Sessions (write). `STRIPE_API_KEY` en `.env`
 - ☐ `app.users.stripe_customer_id` agregado correctamente
 - ☐ Tablas `app.subscriptions` y `app.stripe_webhook_events` creadas con constraints e índices
 - ☐ El índice único parcial `uq_one_active_subscription_per_user` garantiza no haber dos ACTIVE por usuario (verificable con test de integración)
@@ -1078,3 +1092,4 @@ Ninguna. Todas las decisiones críticas resueltas previo a la redacción de esta
 |---|---|---|---|
 | 1.0 | 2026-05-08 | Versión inicial | Cuarta spec del MVP (HU-F06), cierra el Sprint 1 |
 | 1.1 | 2026-05-20 | (a) §5.1 paso 6 y §5.2.1 paso 4: el mecanismo de validación JWT se nombra explícitamente (`JwtAuthenticationFilter` + `SecurityContextHolder`) en lugar del genérico "Backend valida JWT". (b) §8.2 reescrita: interfaces sin prefijo `I` por D1 HU-F01 — `IAuthentication`→filtro Spring Security, `IAudit`→`Auditor`, `INotification`→`Notifier`, `IPayment`→`PaymentGateway`. Nota explícita de la deuda doc-only en `ARCHITECTURE.md` §5 (que todavía lista `IPayment`). (c) §8.3: `ISubscriptionStatus`→`SubscriptionStatus`. (d) §10.2 expandida con los criterios no funcionales antes en §11.2 + columna "Cómo se verifica" + dos constraints nuevos (idempotencia 100×, prohibición de `userId` por path/body/query). (e) §11.2 reemplazada por tabla de trazabilidad criterios HU↔escenarios Gherkin (10 mapeos). | Alinear el SPEC con la decisión locked D1 (sin prefijo `I`) y con la realidad del código mergeado en HU-F02-F03 (no existe interfaz `Authentication`; el filtro Spring Security estándar valida directamente). Reorganizar §10/§11 según el patrón canónico aplicado en HU-F02-F03 v1.0, HU-F04+F20 v1.1: §10 = atributos de calidad + constraints, §11 = criterios funcionales (escenarios) + trazabilidad. |
+| 1.2 | 2026-05-21 | (a) §5.2.1 reescrita: cancelación delegada al **Customer Portal de Stripe** — el endpoint custom `POST /subscriptions/cancel` se elimina y se reemplaza por `POST /subscriptions/portal-session` que abre el portal hosted. (b) §5.2.2 actualizada: el email "se cancelará el X" y el evento `SUBSCRIPTION_CANCELLED_SCHEDULED` se emiten desde el webhook handler (única fuente de la acción en v1.2). (c) §5.3.7 reescrita: `NO_ACTIVE_SUBSCRIPTION`→`NO_STRIPE_CUSTOMER` (409). (d) §6.1.1 nota anti-`payment_method_types` (DPM) e `Idempotency-Key` outbound. (e) §6.1.3 endpoint `/cancel`→`/portal-session`. (f) §9.1 +`BILLING_PORTAL_SESSION_CREATED`, +`SUBSCRIPTION_REACTIVATED`. (g) §12.1 estados B/C botón "Gestionar suscripción"; modal de cancelación eliminado. (h) §12.2 `CancelSubscriptionModal` eliminado; (i) §12.3 `useCancelSubscription`→`useOpenBillingPortal`. (j) §13: la reactivación pasa a estar dentro de alcance (la habilita el portal). (k) §15 DoD: +items DPM y RAK. | Consulta a skill `stripe-best-practices` (`billing.md`): recomienda explícitamente el Customer Portal para self-service subscription management. Beneficio: ahorra ~1h de implementación (no modal, no endpoint /cancel) + habilita features que estaban fuera de alcance v1.1 (reactivación, actualización de tarjeta, descarga de invoices). Trade-off: el usuario sale temporalmente de la app a una página hosted por Stripe. Aceptable para MVP académico. Además, el SPEC se alinea con la postura de seguridad de la skill: RAK en lugar de `sk_`, y DPM (no `payment_method_types`). |

@@ -39,7 +39,7 @@ class UserProfileMapperTest {
     @Test
     void shouldMapAllVisibleFieldsFromUser() {
         User user = sampleUser();
-        UserProfileResponse response = mapper.toResponse(user);
+        UserProfileResponse response = mapper.toResponse(user, false);
 
         assertThat(response.email()).isEqualTo(user.getEmail());
         assertThat(response.nombreCompleto()).isEqualTo(user.getNombreCompleto());
@@ -52,7 +52,7 @@ class UserProfileMapperTest {
 
     @Test
     void shouldNotIncludePasswordHashInSerializedJson() throws Exception {
-        UserProfileResponse response = mapper.toResponse(sampleUser());
+        UserProfileResponse response = mapper.toResponse(sampleUser(), false);
 
         String json = objectMapper.writeValueAsString(response);
 
@@ -66,8 +66,17 @@ class UserProfileMapperTest {
     }
 
     @Test
+    void shouldExposeIsPremiumFlag() {
+        UserProfileResponse falseFlag = mapper.toResponse(sampleUser(), false);
+        UserProfileResponse trueFlag = mapper.toResponse(sampleUser(), true);
+
+        assertThat(falseFlag.isPremium()).isFalse();
+        assertThat(trueFlag.isPremium()).isTrue();
+    }
+
+    @Test
     void shouldNotIncludeAceptoTerminosAtInSerializedJson() throws Exception {
-        UserProfileResponse response = mapper.toResponse(sampleUser());
+        UserProfileResponse response = mapper.toResponse(sampleUser(), false);
 
         String json = objectMapper.writeValueAsString(response);
 

@@ -1,8 +1,12 @@
 package co.edu.unbosque.bloomtrade.notification;
 
 import co.edu.unbosque.bloomtrade.notification.dto.AccountLockedEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.CancellationScheduledEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OtpEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.SubscriptionExpiredEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.SubscriptionPaymentFailedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.WelcomeEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.WelcomePremiumEmailCommand;
 
 /**
  * Puerto del NotificationService. Interfaz conceptual {@code INotification} de ARCHITECTURE.md §5;
@@ -18,4 +22,18 @@ public interface Notifier {
 
     /** Envía (asíncronamente) el aviso de bloqueo temporal por intentos fallidos. */
     void sendAccountLockedEmail(AccountLockedEmailCommand command);
+
+    // ─── HU-F06 — Suscripción premium con Stripe ────────────────────────────
+
+    /** Bienvenida tras activación exitosa de suscripción premium. */
+    void sendWelcomePremiumEmail(WelcomePremiumEmailCommand command);
+
+    /** Confirmación de cancelación programada (Customer Portal v1.2). */
+    void sendCancellationScheduledEmail(CancellationScheduledEmailCommand command);
+
+    /** Aviso "tu suscripción premium ha terminado" — estado terminal CANCELLED. */
+    void sendSubscriptionExpiredEmail(SubscriptionExpiredEmailCommand command);
+
+    /** Aviso "tu pago de renovación falló" — estado terminal PAST_DUE. */
+    void sendSubscriptionPaymentFailedEmail(SubscriptionPaymentFailedEmailCommand command);
 }

@@ -48,6 +48,13 @@ const MESSAGES: Record<string, string> = {
   DUPLICATE_TICKERS: 'La lista de tickers no puede contener duplicados.',
   VALIDATION_INVALID_CHANNEL:
     'Canal de notificación inválido (debe ser EMAIL, SMS o WHATSAPP).',
+
+  // ── HU-F06 (suscripción premium con Stripe) ──────────────────────────────
+  SUBSCRIPTION_ALREADY_ACTIVE: 'Ya tienes una suscripción activa.',
+  NO_STRIPE_CUSTOMER: 'No tienes una suscripción que gestionar todavía.',
+  STRIPE_API_ERROR:
+    'El servicio de pagos no responde. Intenta de nuevo en unos minutos.',
+  VALIDATION_INVALID_PLAN: 'Plan inválido (debe ser MONTHLY o YEARLY).',
 };
 
 export function humanFor(code: string): string {

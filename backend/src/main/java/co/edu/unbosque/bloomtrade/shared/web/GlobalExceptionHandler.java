@@ -18,6 +18,10 @@ import co.edu.unbosque.bloomtrade.auth.profile.exception.DuplicateTickersExcepti
 import co.edu.unbosque.bloomtrade.auth.profile.exception.InvalidTickerException;
 import co.edu.unbosque.bloomtrade.auth.profile.exception.ReadOnlyFieldModifiedException;
 import co.edu.unbosque.bloomtrade.auth.profile.exception.TooManyTickersException;
+import co.edu.unbosque.bloomtrade.auth.subscription.exception.NoStripeCustomerException;
+import co.edu.unbosque.bloomtrade.auth.subscription.exception.StripeApiException;
+import co.edu.unbosque.bloomtrade.auth.subscription.exception.SubscriptionAlreadyActiveException;
+import co.edu.unbosque.bloomtrade.auth.subscription.exception.WebhookSignatureInvalidException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -332,6 +336,68 @@ public class GlobalExceptionHandler {
                 .body(
                         ErrorResponse.of(
                                 429,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(SubscriptionAlreadyActiveException.class)
+    public ResponseEntity<ErrorResponse> handleSubscriptionAlreadyActive(
+            SubscriptionAlreadyActiveException ex, HttpServletRequest request) {
+        String code = "SUBSCRIPTION_ALREADY_ACTIVE";
+        String message =
+                String.format(
+                        "Ya tienes una suscripción activa. Vence el %s.",
+                        ex.getCurrentPeriodEnd());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(
+                        ErrorResponse.of(
+                                409,
+                                code,
+                                message,
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(NoStripeCustomerException.class)
+    public ResponseEntity<ErrorResponse> handleNoStripeCustomer(
+            NoStripeCustomerException ex, HttpServletRequest request) {
+        String code = "NO_STRIPE_CUSTOMER";
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(
+                        ErrorResponse.of(
+                                409,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(StripeApiException.class)
+    public ResponseEntity<ErrorResponse> handleStripeApi(
+            StripeApiException ex, HttpServletRequest request) {
+        log.error("Stripe API error: code={}", ex.getStripeErrorCode(), ex);
+        String code = "STRIPE_API_ERROR";
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(
+                        ErrorResponse.of(
+                                502,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(WebhookSignatureInvalidException.class)
+    public ResponseEntity<ErrorResponse> handleWebhookSignatureInvalid(
+            WebhookSignatureInvalidException ex, HttpServletRequest request) {
+        log.warn("Stripe webhook con firma inválida desde {}", request.getRemoteAddr());
+        String code = "WEBHOOK_SIGNATURE_INVALID";
+        return ResponseEntity.badRequest()
+                .body(
+                        ErrorResponse.of(
+                                400,
                                 code,
                                 ValidationMessages.humanFor(code),
                                 request.getRequestURI(),

@@ -59,3 +59,31 @@ springdoc:
     path: /swagger-ui.html
     operationsSorter: method
     tagsSorter: alpha
+
+# Resilience4j — RetryPolicy para llamadas salientes hacia Stripe (TAC-D2).
+# HU-F06 D1: 3 reintentos con backoff exponencial 1s, 3s, 5s (aprox). NO se reintentan
+# excepciones deterministas (firma inválida, request malformado).
+resilience4j:
+  retry:
+    instances:
+      stripeApi:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 3
+        retry-exceptions:
+          - com.stripe.exception.ApiConnectionException
+          - com.stripe.exception.ApiException
+        ignore-exceptions:
+          - com.stripe.exception.SignatureVerificationException
+          - com.stripe.exception.InvalidRequestException
+          - com.stripe.exception.AuthenticationException
+
+# Stripe — HU-F06. Las env vars STRIPE_* las inyecta docker-compose o un .env local.
+stripe:
+  api-key: ${STRIPE_API_KEY:}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+  price:
+    monthly: ${STRIPE_PRICE_MONTHLY:}
+    yearly: ${STRIPE_PRICE_YEARLY:}
+  return-url: ${APP_BASE_URL:http://localhost:5173}

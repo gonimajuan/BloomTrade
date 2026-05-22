@@ -24,49 +24,86 @@
 
 | Campo | Valor |
 |---|---|
-| Branch | `feat/HU-F04-F20-perfil-notificaciones` |
-| HU | HU-F04 (BT-7) + HU-F20 (BT-9) — Perfil + Canal de notificación, **bundle** |
-| Sprint | 1 — Día 3 del ROADMAP |
-| Spec | `specs/HU-F04-F20-perfil-notificaciones/SPEC.md` v1.1 (publicada 2026-05-20 con changelog alineando D1+D18) |
-| Plan | `specs/HU-F04-F20-perfil-notificaciones/plan.md` — D1–D22 (D19–D22 son ajustes descubiertos en runtime, ver Lotes A/C/D/F) |
-| Tasks | `specs/HU-F04-F20-perfil-notificaciones/tasks.md` — Lotes A–G |
-| Estado | **Lotes A–F cerrados** (2026-05-20). HITOS 1, 2, 3, 4, 5 verdes. `mvn verify` verde con +28 tests nuevos (~118 total). Lote G en cierre: APRENDIZAJES.md actualizado; pendiente E2E visual humano + commit. |
+| Branch | `feat/HU-F06-suscripcion-premium` |
+| HU | HU-F06 (BT-10) — Suscripción premium con Stripe |
+| Sprint | 1 — Día 4 del ROADMAP |
+| Spec | `specs/HU-F06-suscripción-premium/SPEC.md` **v1.2** (publicada 2026-05-21 con changelog Customer Portal + RAK + DPM tras consulta a skill `stripe-best-practices`) |
+| Plan | `specs/HU-F06-suscripción-premium/plan.md` — D1–D21 (cubre RAK, DPM, Idempotency-Key, Customer Portal, split de transacciones, etc.) |
+| Tasks | `specs/HU-F06-suscripción-premium/tasks.md` — Lotes A–H |
+| Estado | **Lotes A–H cerrados** (2026-05-21). HITO 1 verde (compile + V4 DDL válido). HITO 4 verde (`mvn verify` con 124 tests, +14 nuevos). HITOS 2, 3, 5 PENDIENTES del humano: requieren setup Stripe (RAK + 2 Prices + Customer Portal config en Dashboard + `stripe-cli` para forwarding). Frontend build verde (187 modules). |
 
 ---
 
 ## Cómo continuar (handoff Claude → próximo agente)
 
-**Estado del bundle HU-F04+F20 — Lotes A–F funcionales cerrados; Lote G en cierre antes del commit grande.**
+**Estado bundle HU-F06 — código y tests verdes; HITOS visuales pendientes del setup manual de Stripe.**
 
 | Lote | Resumen | HITO |
 |---|---|---|
-| A — Migración V3 + entidad | `V3__user_profile_extension.sql` con `notification_channel` + `tickers_of_interest JSONB` + 2 check constraints + índice GIN. Enums `NotificationChannel`, `Market`. `User` extendido + método de dominio `applyProfileUpdate(...)` (D19, encapsulación PATCH). | HITO 1 ✅ (mvn compile + Flyway aplicó V3 verde, Spring Boot arrancó 8.3s) |
-| B — Catálogo + validadores + audit enum | `AllowedTickers` (25 tickers agrupados por mercado), `@AllowedTicker` + `AllowedTickerValidator`, `@NoDuplicates` + `NoDuplicatesValidator`. `AuditEventType` + `PROFILE_UPDATED`, `NOTIFICATION_CHANNEL_CHANGED`, `PROFILE_UPDATE_FAILED`. `validation-messages.properties` + 5 códigos. | Lote B verde (incluido en HITO 4) |
-| C — DTO + Mapper + Service + Controller | `UpdateProfileRequest`, `UserProfileResponse`, `UserProfileMapper` (MapStruct), 4 excepciones, `GlobalExceptionHandler` con handler para `UnrecognizedPropertyException` (D3 strict Jackson) + handler para `InvalidFormatException` enum → `VALIDATION_INVALID_CHANNEL`. `ProfileService` con `Snapshot` interno para cambio-detection (D7, D17 idempotencia, D18 no-PII). `MeController` con `@AuthenticationPrincipal AuthenticatedUser` (D9 anti path-tampering). `fail-on-unknown-properties=true` global en `application.yml`. | HITO 3 ✅ (curl E2E: register → login → MFA → GET/PATCH /me + read-only rechazado + ticker inválido rechazado + idempotente) |
-| D — Tests backend | `AllowedTickerValidatorTest` (5), `NoDuplicatesValidatorTest` (5), `UserProfileMapperTest` (3 — incluye assertion no-leak `passwordHash`/`$2a$`), `ProfileServiceTest` (8 — happy, multi-field, idempotente, no-PII, error-rethrow), `MeFlowIT` (7 — Postgres+Redis reales, registro→login→MFA→GET/PATCH /me). +28 tests. | HITO 4 ✅ (`mvn verify` BUILD SUCCESS — total ~118 tests) |
-| E — Frontend infra | `constants/tickers.ts` (mirror del backend, sincronizar manualmente), `types/api.ts` + 4 types perfil, `schemas/updateProfile.ts` zod, `api/profileApi.ts`, `useProfile` + `useUpdateProfile` (cache invalidation + optimistic `AuthContext.updateUser` en cambio de nombre), `useDiscardChangesPrompt` (modal manual + `beforeunload`, D22), `DiscardChangesModal` componente genérico. `AuthContext` extendido con `updateUser(partial)`. `messages.es.ts` +5 códigos. | tsc verde |
-| F — Pages + routing | `ProfilePage.tsx` (orquesta secciones: info personal, canal radio group, grid de tickers agrupado por mercado con contador, SaveCancelBar, modal de descarte). `App.tsx` + ruta `/profile` con `ProtectedRoute`. `AppHeader` + link "Mi perfil" (era placeholder en HU-F02-H; ahora navega). | HITO 5 ✅ (`npm run build` verde 180 modules, frontend container rebuildeado + healthy; `/profile` responde 200 — E2E visual queda para el humano) |
-| G — Cierre | APRENDIZAJES.md sección "Día 3 — HU-F04+F20" agregada con 8 reflexiones técnicas. AGENTS.md "Trabajo activo" actualizado (este bloque). Tests frontend deferred [[P1]] (validadores + mapper backend cubren riesgos críticos). | Pendiente HITO 6 (commit + PR) |
+| A — Setup + entidades | `pom.xml` + `stripe-java 28.0.0`. `STACK.md` §2.3 actualizado. `.env.example` y `docker-compose.yml` con `STRIPE_API_KEY` (RAK), `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_MONTHLY/YEARLY`, `APP_BASE_URL`. V4 migration: `users.stripe_customer_id`, `app.subscriptions` (con `uq_one_active_subscription_per_user` partial unique), `app.stripe_webhook_events` (`stripe_event_id UNIQUE`). User entity + `linkStripeCustomer(...)` D8. Enums `SubscriptionStatus`, `BillingPlan`, `WebhookEventStatus`. Entidades `Subscription` (con métodos de dominio `scheduleCancellation/reactivate/markAsCancelled/markAsPastDue/syncPeriod`) y `StripeWebhookEvent`. 2 repositories. `StripeConfig` que valida key + WARN si no es `rk_`. SecurityConfig exime `/api/v1/webhooks/stripe`. | HITO 1 ✅ (compile + V4 DDL syntactically valid en BD) |
+| B — StripeAdapter | `StripeAdapter` (5 métodos: `createCustomer`, `createCheckoutSession`, `createBillingPortalSession`, `retrieveSubscription`, `constructWebhookEvent`). `@Retry(name="stripeApi")` configurado en `application.yml` (3×backoff 1s/3s/9s). `Idempotency-Key` UUID por request en mutables (D4). **NO incluye `payment_method_types`** (D3 trap). `StripeApiException` con `stripeErrorCode`. | Compile verde |
+| C — Service + Controller + isPremium en /me | 5 DTOs (CheckoutSessionRequest/Response, PortalSessionResponse, SubscriptionDto, SubscriptionStatusResponse). `SubscriptionMapper` MapStruct sin `stripeCustomerId`/`stripeSubscriptionId` (D21). 3 excepciones + 4 handlers en GlobalExceptionHandler. ValidationMessages +5 códigos. `SubscriptionService` con D8 split (`ensureStripeCustomer` REQUIRES_NEW). `SubscriptionController` 3 endpoints `@AuthenticationPrincipal`. **G5**: extendido `UserProfileResponse` con `boolean isPremium`; ajustada firma `UserProfileMapper.toResponse(User, boolean)`; `ProfileService` inyecta `SubscriptionService.isPremium`. Tests previos (HU-F04) ajustados. AuditEventType +3. | HITO 2 ⏸️ (curl /checkout-session requiere setup Stripe del usuario) |
+| D — Webhook handler + idempotencia | `StripeWebhookHandler` con: signature verify (lanza `WebhookSignatureInvalidException`), idempotencia vía INSERT con catch de `DataIntegrityViolationException`, switch sobre 4 event types (checkout.completed, sub.updated con detect de transición cancel/reactivate, sub.deleted, invoice.payment_failed). Audit con 10 event types nuevos. `StripeWebhookController` con `@RequestBody String rawBody` para preservar bytes. | HITO 3 ⏸️ (requiere `stripe-cli trigger`) |
+| E — Notification + 4 templates | `Notifier` interface +4 métodos. `MailNotifier` implementa con `@Async`. 4 templates Thymeleaf inline-CSS: `welcome-premium.html`, `subscription-scheduled-to-cancel.html`, `subscription-expired.html`, `subscription-payment-failed.html`. AuditEventType +4 `*_EMAIL_FAILED`. | Verificable en MailHog tras HITO 3 |
+| F — Tests backend críticos | `SubscriptionMapperTest` (2 tests: mapeo OK, no-leak de stripe IDs en JSON). `SubscriptionServiceTest` (9 tests: happy, customer reuso, 409 already_active, 409 no_stripe_customer, Stripe API error con audit FAILED, portal happy, isPremium true/false, status null sub). `StripeWebhookHandlerTest` (3 tests: signature inválida, duplicate short-circuit, tipo desconocido ignorado). **Skip por velocidad**: IT con WireMock (deuda registrada), tests específicos de los 4 handlers individuales (cobertura E2E manual con stripe-cli). | HITO 4 ✅ (124 tests, BUILD SUCCESS) |
+| G — Frontend | `types/api.ts` +6 types. `subscriptionApi.ts` 3 wrappers. 3 hooks (`useSubscription` con polling opcional, `useStartCheckout` redirige a Stripe, `useOpenBillingPortal` redirige a Portal). `messages.es.ts` +4 códigos. `PremiumPage` 4 estados (A: sin sub, B: ACTIVE sin cancel, C: ACTIVE con cancel, D: terminal). `PremiumSuccessPage` con polling y redirect a /dashboard en 3s. `PremiumCancelPage`. App.tsx +3 rutas. AppHeader + link "Premium". | HITO 5 ⏸️ (E2E con stripe-cli + Stripe Dashboard) |
+| H — Cierre | APRENDIZAJES.md sección "Día 4 — HU-F06" con 9 reflexiones técnicas. AGENTS.md handoff (este bloque). Mensaje de commit preparado en `C:\Users\juang\AppData\Local\Temp\bt-hu-f06.txt`. | HITO 6 pendiente del commit + push + PR del humano |
 
-**Pendiente al humano antes de mergear:**
+**Pendiente del humano antes de mergear:**
 
-- ☐ Validación visual E2E manual del flujo en browser (`localhost:5173/profile`): editar nombre + canal + 3 tickers → Guardar → recargar → cambios persistidos; editar y Cancelar → modal de descarte.
-- ☐ Commit grande con los archivos del bundle (Lotes A–G). Mensaje sugerido en `C:\Users\juang\AppData\Local\Temp\bt-hu-f04-f20.txt` (Claude lo deja preparado al cierre de esta sesión).
-- ☐ PR `feat/HU-F04-F20-perfil-notificaciones` → `main` con plantilla CONVENTIONS §4.1.
+1. **Setup Stripe (~10 min)**:
+   - Crear Test Mode RAK en https://dashboard.stripe.com/test/apikeys con permisos: Customers (write), Checkout Sessions (write), Subscriptions (read), Billing Portal Sessions (write).
+   - Crear 2 Products + Prices en https://dashboard.stripe.com/test/prices: USD $12/mo (`STRIPE_PRICE_MONTHLY`) y USD $120/yr (`STRIPE_PRICE_YEARLY`). Copiar los `price_...` IDs.
+   - Activar Customer Portal: Settings → Billing → Customer Portal → habilitar cancel, payment method update, invoice history.
+   - Instalar `stripe-cli`: `scoop install stripe-cli` en PowerShell.
+   - `stripe login` (autenticación browser).
+   - `stripe listen --forward-to localhost:8080/api/v1/webhooks/stripe` en otra terminal → copiar el `whsec_...` que sale al output.
+   - Poblar `.env` con los 4 valores Stripe.
 
-**Decisiones nuevas registradas (Dxx — además de las del plan.md original):**
+2. **HITOS visuales** (~15 min con setup arriba):
+   - `docker compose up -d --build backend frontend` (rebuild para que tomen las env vars nuevas + V4 migrate).
+   - Verificar logs backend: `Stripe SDK inicializado con key rk_test_****`. Si dice `sk_test_****` → WARN (cambiar a RAK).
+   - Browser: login + MFA → menú "Premium" → activar mensual → 4242 4242 4242 4242 → /premium/success → ver banner premium → "Gestionar suscripción" → cancelar en portal → volver a /premium → banner amarillo.
+   - Verificar email en MailHog (`localhost:8025`): "Bienvenido a Premium" + "Tu suscripción se cancelará el X".
+   - Verificar `psql ... -c "SELECT * FROM app.subscriptions;"` y `SELECT * FROM app.stripe_webhook_events;`.
 
-- **D19** (Lote A): el PATCH parcial se encapsula en `User.applyProfileUpdate(...)` (método de dominio), no con setters Lombok. `getTickersOfInterest()` retorna vista inmutable.
-- **D20** (Lote C smoke): `GET /me` sin token devuelve 403 (no 401 como pedía SPEC §5.3.1) porque Spring Security sin `AuthenticationEntryPoint` custom mapea `anyRequest().authenticated()` a 403. Deuda pre-existente desde HU-F02, no regresión.
-- **D21** (Lote D test fix): el catch de `DataAccessException` en `ProfileService.updateMe()` emite 2 audits (PROFILE_UPDATED ya emitido antes del mapper.toResponse + PROFILE_UPDATE_FAILED en catch). Audit post-commit transaccional es over-engineering MVP.
-- **D22** (Lote F): `useBlocker` requiere `createBrowserRouter` (DataRouter). `main.tsx` usa `BrowserRouter` clásico. En vez de migrar router (riesgo de regresión), `useDiscardChangesPrompt` es manual: Cancel button abre modal + `beforeunload` cubre cierre. Pierde modal en navegación SPA via link — riesgo bajo MVP.
+3. **Commit + PR**:
+   - `git add -A`
+   - `git commit -F C:\Users\juang\AppData\Local\Temp\bt-hu-f06.txt`
+   - `git push -u origin feat/HU-F06-suscripcion-premium`
+   - `gh pr create ...` o desde GitHub.
 
-**Deuda nueva identificada (post-bundle):**
+**Decisiones registradas (D1–D21 en plan.md):**
 
-- Tests frontend del Lote G saltados — `useProfile.test`, `useUpdateProfile.test`, `ProfilePage.test`, `DiscardChangesModal flow`. Cobertura crítica (no-leak `passwordHash`, validators, audit dispatch) está en backend.
-- `ARCHITECTURE.md` §5 aún lista interfaces con prefijo `I` (deuda doc-only declarada en SPEC v1.1).
-- Migración a DataRouter del frontend → habilita `useBlocker` para confirmación de descarte en navegación SPA.
-- Generación automática de `constants/tickers.ts` desde el OpenAPI enum del backend (hoy se mantienen sincronizados manualmente).
+- D1: stripe-java 28.0.0, sin override de apiVersion (skill: "Always use the latest").
+- D2: RAK (rk_) en lugar de sk_. `STRIPE_API_KEY` env var genérica.
+- D3: NUNCA `payment_method_types` en checkout (DPM trap de la skill).
+- D4: Idempotency-Key UUID por request en mutables.
+- D5: Webhook raw body + signature verify, exento de JWT.
+- D6: Idempotencia inbound vía UNIQUE constraint + catch DataIntegrityViolationException.
+- D7: Customer Portal endpoint reemplaza /cancel (v1.2 SPEC).
+- D8: Split de transacciones — `ensureStripeCustomer` en REQUIRES_NEW para evitar huérfanos.
+- D9: Sub-paquete `auth/subscription/` (no módulo nuevo).
+- D10: `invoice.payment_failed` → downgrade inmediato a PAST_DUE (MVP — sin grace period).
+- D11–D13: Notifier extendido + 4 templates Thymeleaf.
+- D14: AuditEventType +13 entries.
+- D17: PremiumPage con 4 estados inline (no proliferación de componentes).
+- D18: stripe-cli requerido en dev local.
+- D19: tests IT con WireMock (deuda registrada — saltado por velocidad).
+- D21: stripe_customer_id / stripe_subscription_id NUNCA en responses API. Verificado con test.
+- **D22** (runtime fix HU-F06 Lote D): `EventDataObjectDeserializer.getObject()` retorna `Optional.empty()` cuando la API version del evento de Stripe difiere de la del SDK (caso real: evento `2026-04-22.dahlia` vs `stripe-java 28.0.0`). Solución: `extractObject` usa `deserializeUnsafe()` como fallback. Patrón estándar documentado en stripe-java README — riesgo aceptable porque solo accedemos a campos estables (subscription id, customer id, period start/end, metadata).
+- **D23** (runtime fix cross-HU 2026-05-21): el access token + user se persisten en `localStorage` (`bloomtrade.accessToken`, `bloomtrade.user`) en lugar de vivir solo en memoria. Revierte parcialmente D12 HU-F02 §12.3 por UX inaceptable: cualquier F5 / vuelta de checkout Stripe / pestaña nueva forzaba re-login. Trade-off de seguridad XSS aceptado para MVP; mitigado por (a) TTL 15 min sin refresh silencioso, (b) `onUnauthorized` limpia ambas keys al primer 401. La mini-HU `HU-F0X-token-rotation-logout` reemplazará esto con cookie HttpOnly + refresh tokens y eliminará el localStorage.
+
+**Deuda registrada (no bloqueante para MVP):**
+
+- Tests IT con WireMock para los 4 webhook handlers individuales — actualmente solo signature + idempotency + tipo desconocido tienen tests.
+- Test assertion explícita de no `payment_method_types` en code (D3) — saltado por velocidad.
+- Reconciliation job nocturno entre Stripe y BD — para producción real.
+- Tests frontend del Lote G — saltados (mismo motivo HU-F04).
+- Migración del frontend a `createBrowserRouter` (DataRouter) → habilita `useBlocker` (deuda HU-F04 D22 — sigue válida).
+- `ARCHITECTURE.md` §5 todavía lista interfaces con prefijo `I` (deuda doc-only HU-F02).
+
+**Historial de bundles previos cerrados** (HU-F04+F20 — Día 3): SPEC v1.1 + 7 lotes + HITOs 1-5, 28 tests nuevos. Decisiones D19-D22 (encapsulación PATCH, 403 vs 401 deuda, audit post-commit, `useBlocker` deferido). Mergeado en PR #4 (commit `0caeed7`).
 
 ---
 

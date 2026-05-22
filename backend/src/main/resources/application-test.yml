@@ -37,6 +37,17 @@ jwt:
   secret: test-only-jwt-secret-64-bytes-long-for-hmac-sha256-do-not-use-in-prod
   access-ttl-minutes: 15
 
+# Stripe — valores dummy para perfil 'test' (HU-F06). El SDK se inicializa pero los IT
+# que necesiten Stripe usarán WireMock (D19 plan); ninguno hace llamadas reales con esta key.
+# Prefijo rk_ para que StripeConfig no loguee el WARN de "no es RAK".
+stripe:
+  api-key: rk_test_dummy_for_unit_tests_only
+  webhook-secret: whsec_test_dummy_for_unit_tests_only
+  price:
+    monthly: price_test_dummy_monthly
+    yearly: price_test_dummy_yearly
+  return-url: http://localhost:5173
+
 logging:
   level:
     co.edu.unbosque.bloomtrade: DEBUG

@@ -3,6 +3,7 @@ package co.edu.unbosque.bloomtrade.auth.profile.mapper;
 import co.edu.unbosque.bloomtrade.auth.domain.User;
 import co.edu.unbosque.bloomtrade.auth.profile.dto.UserProfileResponse;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 
 /**
  * Mapeo entity → DTO del perfil completo (CONVENTIONS §5.4.10). El {@code password_hash} y el
@@ -15,5 +16,11 @@ import org.mapstruct.Mapper;
 @Mapper(componentModel = "spring")
 public interface UserProfileMapper {
 
-    UserProfileResponse toResponse(User user);
+    /**
+     * Mapea el {@link User} y el flag {@code isPremium} (calculado por {@code SubscriptionService}
+     * en HU-F06 G5) al {@link UserProfileResponse}. La firma con dos parámetros es la forma
+     * idiomática de MapStruct para inyectar valores derivados externos.
+     */
+    @Mapping(target = "isPremium", source = "isPremium")
+    UserProfileResponse toResponse(User user, boolean isPremium);
 }

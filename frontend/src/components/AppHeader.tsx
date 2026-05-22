@@ -35,6 +35,12 @@ export function AppHeader() {
         >
           Mi perfil
         </Link>
+        <Link
+          to="/premium"
+          className="text-slate-300 underline-offset-4 hover:text-white hover:underline"
+        >
+          Premium
+        </Link>
         <button
           type="button"
           onClick={onLogout}
