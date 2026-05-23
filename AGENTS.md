@@ -24,25 +24,48 @@
 
 | Campo | Valor |
 |---|---|
-| Branch | `feat/HU-F09-orden-compra-market` (creada 2026-05-21 desde main post-PR #5) |
-| HU activa | **HU-F09 Compra Market** — Lotes A–I CERRADOS (incl. H.5 mini-fix); commit pendiente de firma del humano. SPEC bump a v1.1. |
-| Sprint | 2 en curso. Día 5 saltado deliberadamente; Día 6 implementado completo (backend + frontend + cierre). Próximo: Día 7 (HU-F10 Venta Market). |
-| Próximo paso | Humano: `git add -A` + `git commit -F C:\Users\juang\AppData\Local\Temp\bt-hu-f09.txt` + `git push -u origin feat/HU-F09-orden-compra-market` + PR a `main`. Post-merge: HU-F10 (Día 7) reutiliza el andamio. |
-| Deuda viva (NO bloqueante) | (1) Mini-HU `HU-F0X-token-rotation-logout`. (2) Tests IT webhooks Stripe con WireMock. (3) `ARCHITECTURE.md` §5 interfaces con prefijo `I`. (4) `useBlocker` requires DataRouter migration. (5) Generación auto de `frontend/constants/tickers.ts` desde OpenAPI. (6) `JWT_REFRESH_SECRET` eliminado de `.env.example`. (7) Sprint 1 Review+Retro diferidos a Día 10. (8) **Reconciliation Alpaca-paper vs BloomTrade BD** (D17 + D29 HU-F09) — extiende a órdenes encoladas `PENDING + alpacaOrderId != null`: job nocturno o webhook handler para actualizar al fill. (9) `clientOrderLocks` ConcurrentHashMap crece monotónico (D25) — MVP single-user insignificante. (10) Polygon.io como alterno de market data (post-MVP). (11) **D28 hardening**: agregar check en `IntegrationConfig.validateCredentials` que rechace `ALPACA_BASE_URL` terminado en `/v2` con mensaje claro. (12) **D29 hardening**: el toast de orden encolada en frontend solo se muestra una vez; tras refresh la orden PENDING no se ve en ninguna parte (HU-F16 portfolio mostrará "órdenes en cola" cuando entre Día 8). |
+| Branch | `main` — limpia y sincronizada con `origin/main`. Sin ramas locales/remotas pendientes (`feat/HU-F01-registrarse` remota borrada 2026-05-22, `feat/HU-F09-orden-compra-market` local borrada post-merge). |
+| HU activa | **Ninguna**. HU-F09 mergeada en `main` vía PR #6 (commit `1bab23b`, 2026-05-22 noche). Próximo: HU-F10 Venta Market (Día 7). |
+| Sprint | 2 en curso. Días 5 (HU-F11 Encolar/Mensajería) saltado deliberadamente; Día 6 (HU-F09) completo. Próximo: Día 7 (HU-F10), Día 8 (HU-F16 portfolio + HU-F21 saldo), Día 9 (HU-F18 dashboard), Día 10 (Sprint 1+2 Review/Retro diferidos). |
+| Próximo paso | Sesión nueva: arrancar HU-F10 vía SDD (SPEC → plan → tasks → lotes). Ver sección "Cómo continuar (handoff post HU-F09 → arranque HU-F10)" abajo. |
+| Deuda viva (NO bloqueante) | (1) Mini-HU `HU-F0X-token-rotation-logout`. (2) Tests IT webhooks Stripe con WireMock. (3) `ARCHITECTURE.md` §5 interfaces con prefijo `I`. (4) `useBlocker` requires DataRouter migration. (5) Generación auto de `frontend/constants/tickers.ts` desde OpenAPI. (6) `JWT_REFRESH_SECRET` eliminado de `.env.example`. (7) Sprint 1 Review+Retro diferidos a Día 10. (8) **Reconciliation Alpaca-paper vs BloomTrade BD** (D17 + D29 HU-F09) — extiende a órdenes encoladas `PENDING + alpacaOrderId != null`: job nocturno o webhook handler para actualizar al fill. (9) `clientOrderLocks` ConcurrentHashMap crece monotónico (D25) — MVP single-user insignificante. (10) Polygon.io como alterno de market data (post-MVP). (11) **D28 hardening**: agregar check en `IntegrationConfig.validateCredentials` que rechace `ALPACA_BASE_URL` terminado en `/v2` con mensaje claro. (12) **D29 hardening**: el toast de orden encolada en frontend solo se muestra una vez; tras refresh la orden PENDING no se ve en ninguna parte (HU-F16 portfolio mostrará "órdenes en cola" cuando entre Día 8). (13) **HU-F09 orden encolada del demo del 2026-05-22**: una orden `PENDING + alpacaOrderId` quedó en BD del demo viernes fuera de horario. Si NYSE/Alpaca la fileó en la apertura del martes, hay drift entre Alpaca y BD — opciones: aceptar y dejar como "está en cola para siempre en BD" (MVP), o hacer reset manual del paper account + truncar `app.orders` antes de la próxima demo. |
 
 ---
 
-## Cómo continuar (handoff post Lotes A–I de HU-F09 — todo cerrado, commit pendiente)
+## Cómo continuar (handoff post HU-F09 → arranque HU-F10)
 
-**Estado actual (2026-05-22 noche):**
-- 4 bundles Sprint 1 mergeados en `main`: HU-F01 (PR #2), HU-F02+F03 (PR #3), HU-F04+F20 (PR #4), HU-F06 (PR #5).
-- HU-F09 en branch `feat/HU-F09-orden-compra-market` con **52 archivos modificados/nuevos** en working tree, listos para firma.
-- `mvn verify` final: **219 tests verdes** (188 unit + 31 IT, BUILD SUCCESS).
-- `npm run build` final: verde, 195 módulos, sin errores ni warnings.
-- Backend funcional E2E: quote + placeOrder con idempotencia, concurrencia real, Alpaca trading + data API integrados, manejo de mercado cerrado vía `ORDER_QUEUED`.
-- Frontend funcional E2E: `/trade` con OrderForm + OrderQuotePanel + OrderConfirmationToast (palette emerald para EXECUTED + ámbar para PENDING/QUEUED).
-- HITO 8 humano validado: AAPL × 2 fuera de horario → orden encolada → toast ámbar + email order-queued + audit ORDER_CREATED + ORDER_QUEUED en Kibana + balance debitado en BD.
-- HITO 9 cerrado: SPEC v1.1, APRENDIZAJES.md "Día 6", AGENTS.md handoff actualizado, mensaje de commit preparado.
+**Estado actual (2026-05-22 noche, cierre de Día 6):**
+- 5 bundles mergeados en `main`: HU-F01 (PR #2), HU-F02+F03 (PR #3), HU-F04+F20 (PR #4), HU-F06 (PR #5), **HU-F09 (PR #6, merge commit `1bab23b`)**.
+- Working tree limpio. Sin ramas pendientes. `git status` reporta nothing to commit.
+- `mvn verify` última corrida verde: 219 tests (188 unit + 31 IT).
+- `npm run build` última corrida verde: 195 módulos.
+- Stack Docker funcional: postgres + redis + elasticsearch + logstash + kibana + mailhog + backend + frontend (todos healthy en última sesión).
+- Backend E2E: quote + placeOrder con idempotencia, concurrencia real, Alpaca trading + data API integrados, manejo de mercado cerrado vía `ORDER_QUEUED` (D29). Validado en HITO 8 humano.
+- Frontend E2E: `/trade` con OrderForm + OrderQuotePanel + OrderConfirmationToast (palette emerald para EXECUTED + ámbar para PENDING/QUEUED).
+
+**Lo primero en la sesión de HU-F10 (Día 7):**
+
+1. **Leer este `AGENTS.md` completo + `CLAUDE.md` completo**.
+2. **Leer los maestros**: `ARCHITECTURE.md` (módulos no cambiaron), `STACK.md` (Alpaca confirmado §7.1+§7.2), `CONVENTIONS.md`, `ROADMAP.md` Día 7.
+3. **Leer la HU previa como referencia obligatoria**: `specs/HU-F09-orden-compra-market/SPEC.md` (v1.1) + `plan.md` (D1–D29). HU-F10 **reutiliza casi todo el andamio**: `app.orders`, `app.positions`, `AlpacaTradingAdapter`, `MarketDataAdapter`, `CommissionManager`, `OrderEventListener`, `TradingService` (extender con método `placeOrderSell` o parametrizar el actual con `OrderSide`), los 4 componentes frontend (habilitar toggle SELL en `OrderForm`).
+4. **Crear `specs/HU-F10-orden-venta-market/`** vía SDD Paso 1 (spec) → Paso 2 (plan) → Paso 3 (tasks). Esperá aprobación del humano entre pasos (CLAUDE.md Paso 2: "Espera mi aprobación del plan antes de escribir código").
+5. **Estimar complejidad**: ~40-50% de HU-F09 porque el andamio existe. Cambios principales esperables:
+   - **Validar `Position.quantity >= sellQuantity`** antes del INSERT order (analogía a `PortfolioService.debit` pero sobre posición).
+   - **Decrementar position** en lugar de upsert. Si `quantity` queda en 0, eliminar la fila (o setear status soft-delete).
+   - **Credit en `PortfolioService`** (no debit) — agregar método `credit(userId, amount)` con `noRollbackFor` consistente con D24.
+   - **Nuevas validaciones**: `SHORT_SELLING_NOT_ALLOWED` si el usuario no tiene la posición. `INSUFFICIENT_SHARES` si pide vender más de lo que tiene.
+   - **AlpacaTradingAdapter.submitMarketOrder** ya soporta `side="sell"` (ver `AlpacaOrderRequest.market` línea 27) — confirmar paso de `OrderSide.SELL` desde TradingService.
+   - **Email nuevo**: `order-executed-sell.html` (similar a buy pero con crédito al balance + decremento de posición). Reutilizar plantilla con condicional Thymeleaf o crear separadas — decisión D30 emergente.
+   - **Frontend**: habilitar el botón SELL en `OrderForm.tsx` (quitar `disabled`). Quizás un dropdown que solo muestre tickers que el usuario tiene en posición (consulta nueva `GET /portfolio/positions` — pero esa es HU-F16 Día 8). Para MVP, dejar el dropdown completo y validar server-side.
+6. **HITO equivalente al 8 de HU-F09**: demo manual con AAPL primero comprado (puede ser una orden nueva del martes con mercado abierto) y luego vendido. Toast emerald "Orden de venta ejecutada — recibirás USD X" + email + audit `ORDER_EXECUTED` con side=SELL + position decrementada + balance creditado.
+7. **Validación opcional pre-arranque**: cuando el mercado abra (martes 26 May 2026 8:30 AM hora Colombia), correr una compra real para validar el happy path `EXECUTED` de HU-F09 que el viernes no se pudo (mercado cerrado). Si pasa, también valida que la deuda #13 sigue abierta o cerrada (¿la orden encolada del viernes finalmente fileó?).
+
+**Pre-requisitos para arrancar HU-F10:**
+
+- `.env` ya tiene creds Alpaca pobladas (HU-F09).
+- Docker stack puede levantarse con `docker compose up -d` (sin `--build` si no hay cambios en Dockerfile).
+- `ALPACA_BASE_URL=https://paper-api.alpaca.markets` (sin `/v2` — D28).
+- Reconciliación de Alpaca paper account: en https://app.alpaca.markets/paper/dashboard/overview verificar que la orden encolada del viernes filee o no. Si no, no afecta a HU-F10 (cada orden es independiente por `clientOrderId`).
 
 **Lotes HU-F09 cerrados (A–G):**
 
