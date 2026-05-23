@@ -22,6 +22,12 @@ import co.edu.unbosque.bloomtrade.auth.subscription.exception.NoStripeCustomerEx
 import co.edu.unbosque.bloomtrade.auth.subscription.exception.StripeApiException;
 import co.edu.unbosque.bloomtrade.auth.subscription.exception.SubscriptionAlreadyActiveException;
 import co.edu.unbosque.bloomtrade.auth.subscription.exception.WebhookSignatureInvalidException;
+import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaApiException;
+import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaOrderRejectedException;
+import co.edu.unbosque.bloomtrade.integration.alpaca.MarketDataUnavailableException;
+import co.edu.unbosque.bloomtrade.portfolio.exception.InsufficientFundsException;
+import co.edu.unbosque.bloomtrade.trading.exception.InvalidQuantityException;
+import co.edu.unbosque.bloomtrade.trading.exception.InvalidSideException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -398,6 +404,100 @@ public class GlobalExceptionHandler {
                 .body(
                         ErrorResponse.of(
                                 400,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    // ─── HU-F09 Trading handlers ────────────────────────────────────────────────
+
+    @ExceptionHandler(InvalidQuantityException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidQuantity(
+            InvalidQuantityException ex, HttpServletRequest request) {
+        String code = "INVALID_QUANTITY";
+        return ResponseEntity.badRequest()
+                .body(
+                        ErrorResponse.of(
+                                400,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(InvalidSideException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidSide(
+            InvalidSideException ex, HttpServletRequest request) {
+        String code = ex.getErrorCode();
+        return ResponseEntity.badRequest()
+                .body(
+                        ErrorResponse.of(
+                                400,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(InsufficientFundsException.class)
+    public ResponseEntity<ErrorResponse> handleInsufficientFunds(
+            InsufficientFundsException ex, HttpServletRequest request) {
+        String code = "INSUFFICIENT_FUNDS";
+        String message =
+                String.format(
+                        "Saldo insuficiente. Tu saldo: USD %s, requerido: USD %s.",
+                        ex.getBalance().toPlainString(), ex.getRequired().toPlainString());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(
+                        ErrorResponse.of(
+                                409,
+                                code,
+                                message,
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(AlpacaOrderRejectedException.class)
+    public ResponseEntity<ErrorResponse> handleAlpacaRejected(
+            AlpacaOrderRejectedException ex, HttpServletRequest request) {
+        log.warn("Alpaca rejected order: reason={}", ex.getAlpacaReason());
+        String code = "ALPACA_ORDER_REJECTED";
+        String message = "El mercado rechazó tu orden: " + ex.getAlpacaReason();
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(
+                        ErrorResponse.of(
+                                422,
+                                code,
+                                message,
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(AlpacaApiException.class)
+    public ResponseEntity<ErrorResponse> handleAlpacaApi(
+            AlpacaApiException ex, HttpServletRequest request) {
+        log.error("Alpaca API error tras {} intento(s)", ex.getAttempts(), ex);
+        String code = "ALPACA_API_ERROR";
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(
+                        ErrorResponse.of(
+                                502,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(MarketDataUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleMarketDataUnavailable(
+            MarketDataUnavailableException ex, HttpServletRequest request) {
+        log.warn("Market data unavailable: {}", ex.getMessage());
+        String code = "MARKET_DATA_UNAVAILABLE";
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(
+                        ErrorResponse.of(
+                                502,
                                 code,
                                 ValidationMessages.humanFor(code),
                                 request.getRequestURI(),

@@ -132,7 +132,7 @@ El sistema está compuesto por **9 módulos autónomos**, cada uno implementado 
 ### IntegrationService
 
 - `AlpacaAdapter` — traduce órdenes al formato Alpaca y respuestas de Alpaca al formato interno; contiene `RetryPolicy` (3 reintentos con intervalos 1s, 3s, 5s)
-- `MarketDataAdapter` — obtiene precios de Polygon.io (o Alpha Vantage como alterno) y los traduce al formato interno
+- `MarketDataAdapter` — obtiene precios de Alpaca Market Data (o Polygon.io como alterno post-MVP — ver `STACK.md` §7.2.1) y los traduce al formato interno
 - `StripeAdapter` — procesa cobros de suscripción y traduce respuestas de Stripe al formato interno
 - `TwilioAdapter` — envía SMS y WhatsApp vía API de Twilio
 

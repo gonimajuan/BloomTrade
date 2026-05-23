@@ -273,15 +273,24 @@ Definida en `ARCHITECTURE.md` §12. **Ningún log de auditoría puede omitir nin
 
 > **Decisión simplificadora del MVP:** el PDF original sugiere crear cuenta Alpaca por usuario. Para el MVP local con Docker Compose se trabaja contra una única cuenta paper de demostración. La arquitectura no se ve afectada — el `AlpacaAdapter` simplemente usa credenciales únicas. Este simplificación se documenta también en el ROADMAP.
 
-### 7.2 Polygon.io (datos de mercado)
+### 7.2 Datos de mercado — Alpaca Market Data (MVP)
 
-- **Plan:** Free tier
-- **Endpoint base:** `https://api.polygon.io`
-- **Autenticación:** API Key en query param `apiKey={key}` o header
-- **Adapter:** `MarketDataAdapter` en `IntegrationService`
-- **Estrategia de fetch:** endpoint `/v2/snapshot/locale/us/markets/stocks/tickers?tickers={list}` permite traer múltiples tickers en una llamada
-- **Limitación del free tier:** 5 req/min, datos end-of-day. Para el MVP **es suficiente** porque el caché Redis amortigua y la demo no requiere precios reales en tiempo real
-- **Plan de migración:** si se necesita real-time, se cambia a tier pago o se reemplaza por Alpaca Market Data sin tocar `DashboardService` (TAC-M1)
+> **D9 D-MD-PROVIDER** (`specs/HU-F09-orden-compra-market/plan.md`): **Alpaca Market Data es el proveedor único de market data en MVP.** Polygon.io queda diferido a post-MVP (ver §7.2.1).
+
+- **Plan:** Free tier incluido en la cuenta Alpaca Paper Trading (sin credenciales adicionales — usa las mismas que §7.1)
+- **Endpoint base:** `https://data.alpaca.markets`
+- **Autenticación:** mismos headers `APCA-API-KEY-ID` + `APCA-API-SECRET-KEY` que la API de trading
+- **Adapter:** `MarketDataAdapter` en `integration/alpaca/` (HU-F09)
+- **Estrategia de fetch:** endpoint `/v2/stocks/{symbol}/quotes/latest` retorna el bid/ask más reciente del ticker. Mid-price calculado como `(ask + bid) / 2`.
+- **Limitación del free tier:** ~200 req/min y datos delayed 15 minutos. Suficiente para MVP paper trading demo.
+- **Plan de migración:** si en post-MVP se necesita real-time o múltiple proveedor, reintroducir Polygon.io vía `MarketDataAdapter` es un cambio aislado (TAC-M1).
+
+#### 7.2.1 Polygon.io — diferido a post-MVP
+
+- **Estado:** disponible como contingencia si Alpaca Data deja de ser suficiente. NO se usa en MVP.
+- **Endpoint base previsto:** `https://api.polygon.io`
+- **Autenticación prevista:** API Key en query param o header
+- **Razón del diferimiento:** reportes de degradación reciente en Polygon free tier (D9). La integración Alpaca-única reduce 1 dependencia externa y reusa creds + adapter pattern + WireMock.
 
 ### 7.3 Stripe (suscripción premium)
 
@@ -494,3 +503,4 @@ Este archivo se actualiza vía PR como cualquier código. Cada cambio significat
 |---|---|---|
 | 2026-05-07 | Versión inicial | Cierre de fase de diseño, inicio de implementación SDD |
 | 2026-05-19 | §2.2: + `spring-boot-starter-mail`, `spring-boot-starter-thymeleaf`. §3.2: + `@hookform/resolvers`. | Requeridas por HU-F01: email de bienvenida vía MailHog con plantilla Thymeleaf, y resolver zod en el formulario de registro. Aprobadas por el humano. refs specs/HU-F01-registrarse/SPEC.md |
+| 2026-05-22 | §7.2 reescrita: Alpaca Market Data como proveedor único de market data en MVP. Polygon.io movido a §7.2.1 como diferido a post-MVP. | D9 D-MD-PROVIDER (`specs/HU-F09-orden-compra-market/plan.md`): reportes de degradación reciente en Polygon free tier + Alpaca paper account ya incluye market data sin creds adicionales. Reduce 1 dependencia externa y reusa creds + adapter pattern. Pre-aprobada por el humano en cuestionario de plan. refs specs/HU-F09-orden-compra-market/SPEC.md |

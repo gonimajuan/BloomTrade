@@ -166,6 +166,14 @@ services:
       STRIPE_PRICE_MONTHLY: ${STRIPE_PRICE_MONTHLY:?STRIPE_PRICE_MONTHLY debe estar definido (price_... del Dashboard)}
       STRIPE_PRICE_YEARLY: ${STRIPE_PRICE_YEARLY:?STRIPE_PRICE_YEARLY debe estar definido (price_... del Dashboard)}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5173}
+      # Alpaca (HU-F09 — trading + data API). `:?` aborta si faltan creds reales.
+      ALPACA_API_KEY: ${ALPACA_API_KEY:?ALPACA_API_KEY debe estar definido (Generate en https://app.alpaca.markets/paper/dashboard/overview)}
+      ALPACA_API_SECRET: ${ALPACA_API_SECRET:?ALPACA_API_SECRET debe estar definido (Generate en el mismo paso que ALPACA_API_KEY)}
+      ALPACA_BASE_URL: ${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
+      ALPACA_DATA_BASE_URL: ${ALPACA_DATA_BASE_URL:-https://data.alpaca.markets}
+      # Trading config (HU-F09 D7 D-MAX-QTY, D-TRADING-DEFAULT-COMMISSION). El default-commission
+      # se usa SOLO si config.commission_rates está vacía (fallback de fail-safe).
+      TRADING_DEFAULT_COMMISSION_PCT: ${TRADING_DEFAULT_COMMISSION_PCT:-0.02}
     ports:
       - "8080:8080"
     depends_on:

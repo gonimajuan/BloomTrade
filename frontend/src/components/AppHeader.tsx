@@ -41,6 +41,12 @@ export function AppHeader() {
         >
           Premium
         </Link>
+        <Link
+          to="/trade"
+          className="text-slate-300 underline-offset-4 hover:text-white hover:underline"
+        >
+          Operar
+        </Link>
         <button
           type="button"
           onClick={onLogout}

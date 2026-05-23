@@ -48,6 +48,38 @@ stripe:
     yearly: price_test_dummy_yearly
   return-url: http://localhost:5173
 
+# Alpaca — valores dummy para perfil 'test' (HU-F09). IntegrationConfig.validateCredentials
+# rechaza blank/placeholder "replace_me"; estos valores pasan el check. Los IT que hagan
+# llamadas reales a Alpaca usarán WireMock con baseUrl override (Lote G).
+alpaca:
+  api-key: PKTEST_dummy_for_unit_tests_only
+  api-secret: dummy_secret_64_chars_for_unit_tests_only_not_a_real_alpaca_secret
+  trading-base-url: https://paper-api.alpaca.markets
+  data-base-url: https://data.alpaca.markets
+  connect-timeout: 2s
+  read-timeout: 5s
+
+trading:
+  default-commission-pct: 0.02
+  max-quantity-per-order: 10000
+
+# Resilience4j override en perfil 'test': wait-duration cortos para que los IT que validan
+# retry+fallback (Lote G) no demoren ~13s por test. Misma cantidad de intentos (3); solo
+# acelera el backoff. NO afecta tests de unit que no usan Spring AOP.
+resilience4j:
+  retry:
+    instances:
+      alpacaTradingApi:
+        max-attempts: 3
+        wait-duration: 50ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+      alpacaDataApi:
+        max-attempts: 3
+        wait-duration: 50ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+
 logging:
   level:
     co.edu.unbosque.bloomtrade: DEBUG

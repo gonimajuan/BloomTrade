@@ -2,6 +2,10 @@ package co.edu.unbosque.bloomtrade.notification;
 
 import co.edu.unbosque.bloomtrade.notification.dto.AccountLockedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.CancellationScheduledEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.OrderExecutedEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.OrderFailedEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.OrderQueuedEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.OrderRejectedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OtpEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.SubscriptionExpiredEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.SubscriptionPaymentFailedEmailCommand;
@@ -36,4 +40,32 @@ public interface Notifier {
 
     /** Aviso "tu pago de renovación falló" — estado terminal PAST_DUE. */
     void sendSubscriptionPaymentFailedEmail(SubscriptionPaymentFailedEmailCommand command);
+
+    // ─── HU-F09 — Orden de compra Market ────────────────────────────────────
+
+    /**
+     * Confirma al usuario que su orden de compra Market se ejecutó (con precio real de
+     * ejecución + comisión + nuevo saldo).
+     */
+    void sendOrderExecutedEmail(OrderExecutedEmailCommand command);
+
+    /**
+     * Notifica que el mercado rechazó la orden (símbolo no soportado, qty fuera de rango del
+     * lado Alpaca). NO se envía cuando el rechazo es por {@code INSUFFICIENT_FUNDS} —
+     * decisión SPEC §9.2.
+     */
+    void sendOrderRejectedEmail(OrderRejectedEmailCommand command);
+
+    /**
+     * Notifica que la orden no pudo procesarse por un error técnico (Alpaca down post-retries,
+     * market data caído). Enfatiza que el saldo NO fue afectado.
+     */
+    void sendOrderFailedEmail(OrderFailedEmailCommand command);
+
+    /**
+     * Notifica que la orden fue aceptada por Alpaca pero quedó encolada porque el mercado
+     * estaba cerrado (HU-F09 D29 emergente Lote H.5). Indica que el saldo SÍ se redujo como
+     * reserva y que se ejecutará cuando abra el mercado.
+     */
+    void sendOrderQueuedEmail(OrderQueuedEmailCommand command);
 }
