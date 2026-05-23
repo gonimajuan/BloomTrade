@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Tu orden de compra quedó en cola</title>
+  </head>
+  <body style="font-family: Arial, Helvetica, sans-serif; background-color: #f4f5f7; margin: 0; padding: 24px;">
+    <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 8px; padding: 32px;">
+      <h1 style="color: #0f172a; font-size: 22px; margin-top: 0;">Tu orden quedó en cola</h1>
+      <p style="color: #334155; font-size: 15px;">
+        Hola <strong th:text="${nombreCompleto}">Inversionista</strong>,
+      </p>
+      <p style="color: #334155; font-size: 15px;">
+        Recibimos tu orden de compra de
+        <strong th:text="${quantity}">10</strong>
+        acciones de
+        <strong th:text="${ticker}">AAPL</strong>
+        pero el mercado está cerrado en este momento.
+        <strong>Se ejecutará automáticamente cuando abra el mercado</strong>, al mejor precio disponible.
+      </p>
+      <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+        <tr>
+          <td style="color: #64748b; font-size: 14px; padding: 6px 0;">Precio unitario cotizado</td>
+          <td style="color: #0f172a; font-size: 14px; padding: 6px 0; text-align: right;">USD <span th:text="${quotedUnitPrice}">184.50</span></td>
+        </tr>
+        <tr>
+          <td style="color: #64748b; font-size: 14px; padding: 6px 0;">Comisión</td>
+          <td style="color: #0f172a; font-size: 14px; padding: 6px 0; text-align: right;">USD <span th:text="${commission}">36.90</span></td>
+        </tr>
+        <tr>
+          <td style="color: #64748b; font-size: 14px; padding: 6px 0; border-top: 1px solid #e2e8f0;"><strong>Total reservado</strong></td>
+          <td style="color: #0f172a; font-size: 14px; padding: 6px 0; text-align: right; border-top: 1px solid #e2e8f0;"><strong>USD <span th:text="${quotedTotal}">1881.90</span></strong></td>
+        </tr>
+        <tr>
+          <td style="color: #64748b; font-size: 14px; padding: 6px 0;">Nuevo saldo disponible</td>
+          <td style="color: #0f172a; font-size: 14px; padding: 6px 0; text-align: right;">USD <span th:text="${newBalance}">8118.10</span></td>
+        </tr>
+      </table>
+      <p style="background: #fef9c3; border-left: 3px solid #facc15; padding: 12px 16px; color: #713f12; font-size: 14px; margin: 16px 0;">
+        Tu saldo ya fue debitado para reservar la compra. El precio final de ejecución puede
+        variar ligeramente — te enviaremos otro correo cuando la orden se ejecute.
+      </p>
+      <p style="color: #94a3b8; font-size: 12px; margin-top: 24px;">
+        ID de la orden en Alpaca: <span th:text="${alpacaOrderId}">alp-xxx</span>
+      </p>
+      <p style="margin: 28px 0;">
+        <a th:href="${loginUrl}"
+           href="#"
+           style="background: #0f172a; color: #ffffff; text-decoration: none; padding: 12px 22px; border-radius: 6px; font-size: 15px; display: inline-block;">
+          Ver mis órdenes
+        </a>
+      </p>
+      <p style="color: #94a3b8; font-size: 12px; margin-bottom: 0;">
+        BloomTrade · Universidad El Bosque · Este es un correo automático, no respondas a este mensaje.
+      </p>
+    </div>
+  </body>
+</html>

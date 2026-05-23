@@ -60,9 +60,9 @@ springdoc:
     operationsSorter: method
     tagsSorter: alpha
 
-# Resilience4j — RetryPolicy para llamadas salientes hacia Stripe (TAC-D2).
-# HU-F06 D1: 3 reintentos con backoff exponencial 1s, 3s, 5s (aprox). NO se reintentan
-# excepciones deterministas (firma inválida, request malformado).
+# Resilience4j — RetryPolicy para llamadas salientes hacia APIs externas (TAC-D2).
+# 3 reintentos con backoff exponencial 1s, 3s, 9s (multiplier 3). NO se reintentan
+# excepciones deterministas (firma inválida, 4xx con request malformado).
 resilience4j:
   retry:
     instances:
@@ -78,6 +78,32 @@ resilience4j:
           - com.stripe.exception.SignatureVerificationException
           - com.stripe.exception.InvalidRequestException
           - com.stripe.exception.AuthenticationException
+      # Alpaca trading API (HU-F09 Lote B). Reintenta solo en errores transitorios
+      # (timeouts, 5xx). NO reintenta cuando Alpaca rechaza la orden (lógico —
+      # ignore-exceptions) ni en 4xx determinista (no listado en retry-exceptions
+      # → por defecto NO se reintenta).
+      alpacaTradingApi:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 3
+        retry-exceptions:
+          - org.springframework.web.client.HttpServerErrorException
+          - org.springframework.web.client.ResourceAccessException
+        ignore-exceptions:
+          - co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaOrderRejectedException
+      # Alpaca data API (HU-F09 Lote B). Misma política. El 429 (rate limit) se
+      # considera transitorio y se reintenta — Resilience4j tolera HttpClientErrorException
+      # 429 si se mapea como HttpServerErrorException via wrapper, pero por simplicidad
+      # NO se incluye 4xx en retry; un 429 sostenido propaga como MARKET_DATA_UNAVAILABLE.
+      alpacaDataApi:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 3
+        retry-exceptions:
+          - org.springframework.web.client.HttpServerErrorException
+          - org.springframework.web.client.ResourceAccessException
 
 # Stripe — HU-F06. Las env vars STRIPE_* las inyecta docker-compose o un .env local.
 stripe:
@@ -87,3 +113,24 @@ stripe:
     monthly: ${STRIPE_PRICE_MONTHLY:}
     yearly: ${STRIPE_PRICE_YEARLY:}
   return-url: ${APP_BASE_URL:http://localhost:5173}
+
+# Alpaca — HU-F09. Trading + Market Data en una sola cuenta paper trading.
+# D9 D-MD-PROVIDER: data.alpaca.markets reemplaza a Polygon en MVP.
+alpaca:
+  api-key: ${ALPACA_API_KEY:}
+  api-secret: ${ALPACA_API_SECRET:}
+  trading-base-url: ${ALPACA_BASE_URL:https://paper-api.alpaca.markets}
+  data-base-url: ${ALPACA_DATA_BASE_URL:https://data.alpaca.markets}
+  # Timeouts del RestClient compartido. Connect corto (alpaca responde rápido o nada);
+  # read amplio para tolerar latencia ocasional de la API.
+  connect-timeout: 2s
+  read-timeout: 5s
+
+# Trading — HU-F09. Parametrización de la lógica de órdenes.
+trading:
+  # Comisión por defecto si config.commission_rates está vacía (fallback fail-safe).
+  # En operación normal el valor proviene de BD (HU-F30 lo expondrá en UI admin).
+  default-commission-pct: ${TRADING_DEFAULT_COMMISSION_PCT:0.02}
+  # Cantidad máxima por orden Market. D7: hardcoded a 10000 en MVP, configurable
+  # vía env var sin redeploy para escape hatch.
+  max-quantity-per-order: 10000

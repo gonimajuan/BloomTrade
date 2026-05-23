@@ -55,6 +55,24 @@ const MESSAGES: Record<string, string> = {
   STRIPE_API_ERROR:
     'El servicio de pagos no responde. Intenta de nuevo en unos minutos.',
   VALIDATION_INVALID_PLAN: 'Plan inválido (debe ser MONTHLY o YEARLY).',
+
+  // ── HU-F09 (orden de compra Market con Alpaca paper trading) ─────────────
+  // Nota: INVALID_TICKER y ACCOUNT_NOT_ACTIVE ya existen arriba (HU-F04/F02) y se reusan.
+  INVALID_QUANTITY: 'La cantidad debe ser un entero positivo entre 1 y 10000.',
+  INVALID_SIDE: 'Operación inválida.',
+  SIDE_NOT_YET_IMPLEMENTED: 'La venta estará disponible próximamente.',
+  INVALID_CLIENT_ORDER_ID:
+    'Error técnico al generar la orden. Recarga la página.',
+  INSUFFICIENT_FUNDS:
+    'Saldo insuficiente para esta orden. Pide otro quote con menos cantidad.',
+  ALPACA_API_ERROR:
+    'El mercado no respondió. Tu saldo está intacto. Intenta de nuevo.',
+  ALPACA_ORDER_REJECTED: 'El mercado rechazó tu orden. Intenta con otro ticker.',
+  MARKET_DATA_UNAVAILABLE:
+    'No se pudo obtener el precio actual. Intenta de nuevo.',
+  MARKET_CLOSED:
+    'El mercado está cerrado en este momento. Vuelve a intentarlo en horario de mercado.',
+  ORDER_DUPLICATE_NOT_AN_ERROR: 'Tu orden ya estaba registrada.',
 };
 
 export function humanFor(code: string): string {

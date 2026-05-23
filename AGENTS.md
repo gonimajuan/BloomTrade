@@ -24,19 +24,90 @@
 
 | Campo | Valor |
 |---|---|
-| Branch | `feat/HU-F06-suscripcion-premium` |
-| HU | HU-F06 (BT-10) — Suscripción premium con Stripe |
-| Sprint | 1 — Día 4 del ROADMAP |
-| Spec | `specs/HU-F06-suscripción-premium/SPEC.md` **v1.2** (publicada 2026-05-21 con changelog Customer Portal + RAK + DPM tras consulta a skill `stripe-best-practices`) |
-| Plan | `specs/HU-F06-suscripción-premium/plan.md` — D1–D21 (cubre RAK, DPM, Idempotency-Key, Customer Portal, split de transacciones, etc.) |
-| Tasks | `specs/HU-F06-suscripción-premium/tasks.md` — Lotes A–H |
-| Estado | **Lotes A–H cerrados** (2026-05-21). HITO 1 verde (compile + V4 DDL válido). HITO 4 verde (`mvn verify` con 124 tests, +14 nuevos). HITOS 2, 3, 5 PENDIENTES del humano: requieren setup Stripe (RAK + 2 Prices + Customer Portal config en Dashboard + `stripe-cli` para forwarding). Frontend build verde (187 modules). |
+| Branch | `feat/HU-F09-orden-compra-market` (creada 2026-05-21 desde main post-PR #5) |
+| HU activa | **HU-F09 Compra Market** — Lotes A–I CERRADOS (incl. H.5 mini-fix); commit pendiente de firma del humano. SPEC bump a v1.1. |
+| Sprint | 2 en curso. Día 5 saltado deliberadamente; Día 6 implementado completo (backend + frontend + cierre). Próximo: Día 7 (HU-F10 Venta Market). |
+| Próximo paso | Humano: `git add -A` + `git commit -F C:\Users\juang\AppData\Local\Temp\bt-hu-f09.txt` + `git push -u origin feat/HU-F09-orden-compra-market` + PR a `main`. Post-merge: HU-F10 (Día 7) reutiliza el andamio. |
+| Deuda viva (NO bloqueante) | (1) Mini-HU `HU-F0X-token-rotation-logout`. (2) Tests IT webhooks Stripe con WireMock. (3) `ARCHITECTURE.md` §5 interfaces con prefijo `I`. (4) `useBlocker` requires DataRouter migration. (5) Generación auto de `frontend/constants/tickers.ts` desde OpenAPI. (6) `JWT_REFRESH_SECRET` eliminado de `.env.example`. (7) Sprint 1 Review+Retro diferidos a Día 10. (8) **Reconciliation Alpaca-paper vs BloomTrade BD** (D17 + D29 HU-F09) — extiende a órdenes encoladas `PENDING + alpacaOrderId != null`: job nocturno o webhook handler para actualizar al fill. (9) `clientOrderLocks` ConcurrentHashMap crece monotónico (D25) — MVP single-user insignificante. (10) Polygon.io como alterno de market data (post-MVP). (11) **D28 hardening**: agregar check en `IntegrationConfig.validateCredentials` que rechace `ALPACA_BASE_URL` terminado en `/v2` con mensaje claro. (12) **D29 hardening**: el toast de orden encolada en frontend solo se muestra una vez; tras refresh la orden PENDING no se ve en ninguna parte (HU-F16 portfolio mostrará "órdenes en cola" cuando entre Día 8). |
 
 ---
 
-## Cómo continuar (handoff Claude → próximo agente)
+## Cómo continuar (handoff post Lotes A–I de HU-F09 — todo cerrado, commit pendiente)
 
-**Estado bundle HU-F06 — código y tests verdes; HITOS visuales pendientes del setup manual de Stripe.**
+**Estado actual (2026-05-22 noche):**
+- 4 bundles Sprint 1 mergeados en `main`: HU-F01 (PR #2), HU-F02+F03 (PR #3), HU-F04+F20 (PR #4), HU-F06 (PR #5).
+- HU-F09 en branch `feat/HU-F09-orden-compra-market` con **52 archivos modificados/nuevos** en working tree, listos para firma.
+- `mvn verify` final: **219 tests verdes** (188 unit + 31 IT, BUILD SUCCESS).
+- `npm run build` final: verde, 195 módulos, sin errores ni warnings.
+- Backend funcional E2E: quote + placeOrder con idempotencia, concurrencia real, Alpaca trading + data API integrados, manejo de mercado cerrado vía `ORDER_QUEUED`.
+- Frontend funcional E2E: `/trade` con OrderForm + OrderQuotePanel + OrderConfirmationToast (palette emerald para EXECUTED + ámbar para PENDING/QUEUED).
+- HITO 8 humano validado: AAPL × 2 fuera de horario → orden encolada → toast ámbar + email order-queued + audit ORDER_CREATED + ORDER_QUEUED en Kibana + balance debitado en BD.
+- HITO 9 cerrado: SPEC v1.1, APRENDIZAJES.md "Día 6", AGENTS.md handoff actualizado, mensaje de commit preparado.
+
+**Lotes HU-F09 cerrados (A–G):**
+
+| Lote | HITO | Resumen | Tests añadidos |
+|---|---|---|---|
+| A | 1 ✅ | env vars + STACK.md §7.2 (Polygon→Alpaca) + V5 (orders/positions/commission_rates) + 6 entidades + 4 repositories + `application.yml` blocks `alpaca:` + `trading:` + retry instances | (compile + Flyway) |
+| B | 2 ✅ | `IntegrationConfig` con 2 `RestClient` (trading + data) + `AlpacaTradingAdapter.submitMarketOrder/getOrder` + `MarketDataAdapter.getLatestPrice` + 3 excepciones + 3 DTOs + `SubmitMarketOrderCommand` | 12 unit (MockRestServiceServer) |
+| C | 3 ✅ | `ConfigurationManager` + `CommissionManager` (BigDecimal HALF_UP scale=2) + `MarketScheduleManager` (stub MVP) | 17 unit (@CsvSource params) |
+| D | 4 ✅ | `PortfolioService.debit/upsertPosition/getBalance/getPositions` + `UserBalance.applyDebit` + `InsufficientFundsException` + lock pessimistic | 8 IT (incl. concurrency 2-thread) |
+| E | 5 ✅ | 4 DTOs API + `OrderMapper` (manual, BigDecimal→String) + 2 excepciones nuevas + 6 handlers en `GlobalExceptionHandler` + 7 códigos i18n + `TradingService.quote/placeOrderTx` + `OrderController` con Swagger | 12 unit |
+| F | 6 ✅ | 3 EmailCommand DTOs + `Notifier` +3 métodos + `MailNotifier` +3 impl + 3 templates Thymeleaf + `AuditEventType` +10 entries + `OrderEventListener` con `@TransactionalEventListener(AFTER_COMMIT)` + `@Transactional(REQUIRES_NEW, readOnly)` | 5 IT |
+| G | 7 ✅ | `TradingControllerIT` (9 tests E2E con WireMock) + `TradingServiceConcurrencyIT` (idempotency × 10 + concurrency × 2) + 5 fixes críticos (D23–D27 emergentes en `plan.md` §2.4) | 11 IT |
+
+**Lo primero en la próxima sesión** (post-merge de HU-F09 → Día 7 HU-F10):
+1. Leer `CLAUDE.md` + este `AGENTS.md` completos.
+2. Confirmar que PR de HU-F09 está mergeado en `main` y la branch local `feat/HU-F09-orden-compra-market` ya no es la activa.
+3. `git checkout main; git pull; git checkout -b feat/HU-F10-orden-venta-market`.
+4. Leer `specs/HU-F09-orden-compra-market/SPEC.md` (v1.1) como referencia — HU-F10 reutiliza el andamio: `app.orders`, `app.positions`, `AlpacaTradingAdapter`, `CommissionManager`, `OrderEventListener`, los 4 componentes frontend (toggle BUY/SELL se habilita).
+5. Crear `specs/HU-F10-orden-venta-market/` con SPEC + plan + tasks. La complejidad esperada es ~40% de HU-F09 porque la infraestructura está hecha. Cambios principales: validar que `Position.quantity >= sellQuantity`, decrementar position en lugar de upsert, debit comisión + (si SELL, credit subtotal-comisión), nueva validación SHORT_SELLING_NOT_ALLOWED.
+6. HITO equivalente al 8 de HU-F09: demo manual con AAPL primero comprado (puede ser orden ya encolada del demo HU-F09) y luego vendido.
+
+**Pendiente del humano antes de empezar HU-F10:**
+
+1. **Firmar commit + push + PR de HU-F09**:
+   - `git add -A` (52 archivos: backend + frontend + docs + migration V5 + templates).
+   - `git commit -F C:\Users\juang\AppData\Local\Temp\bt-hu-f09.txt` (P6: ruta completa, no `$env:TEMP`).
+   - `git push -u origin feat/HU-F09-orden-compra-market`.
+   - `gh pr create --title "feat(trading): HU-F09 — compra Market con Alpaca paper trading" --body "..."` (o desde GitHub UI).
+   - Squash and merge a `main`.
+
+2. **Validación opcional post-merge mercado abierto**:
+   - Cuando el mercado NYSE abra (lunes 25 May es Memorial Day USA → cerrado; primera ventana es **martes 26 May 2026, 8:30 AM hora Colombia = 9:30 AM ET**), repetir compra AAPL × 1 en `/trade`. Esperado: toast emerald ✅ "Orden ejecutada: 1 AAPL a USD …" + position creada + balance debitado por executionTotal real.
+   - Si la orden encolada del viernes (status `PENDING + alpacaOrderId`) finalmente filea, la reconciliation manual queda pendiente (deuda #8 + #12 del AGENTS.md). Para MVP es OK que esa orden quede `PENDING` indefinidamente — el demo del happy path en HITO 8 se valida con la nueva.
+
+**Pre-requisitos para arrancar Lote H:**
+- `.env` con creds Alpaca pobladas (humano ya las tiene; verificar log de backend al arrancar: debería decir `Alpaca integration inicializada — trading: ... | data: ... | key: PK4Q****DSRC`).
+- Docker stack arriba (`postgres:5433`, `redis:6379`, `elasticsearch:9200`, `logstash`, `mailhog`, `backend:8080`).
+- Frontend dir: `K:\Repos\BloomTrade\frontend`. Verificar `npm install` está al día (HU-F06 no agregó deps; tampoco F09).
+
+**Estructura de archivos frontend a crear (tasks.md Lote H):**
+
+```
+frontend/src/
+├── pages/TradePage.tsx                                     ← T8.9
+├── features/trading/
+│   ├── components/{OrderForm,TickerDropdown,
+│   │               OrderQuotePanel,OrderConfirmationToast}.tsx  ← T8.5-T8.8
+│   ├── hooks/{useQuote,useSubmitOrder}.ts                  ← T8.3-T8.4
+│   └── api/tradingApi.ts                                   ← T8.2
+
+frontend/src/ modificados:
+├── types/api.ts                ← +7 tipos T8.1
+├── App.tsx                     ← +ruta T8.10
+├── components/AppHeader.tsx    ← +link T8.11
+└── i18n/messages.es.ts         ← +10 códigos T8.12
+```
+
+**Bugs encontrados y arreglados durante Lote G** (registrados como D23–D27 en plan.md §2.4):
+1. Pre-validación fondos faltante antes de INSERT → agregada (D23).
+2. `noRollbackFor` necesario en `placeOrderTx` + `PortfolioService.debit` para preservar filas FAILED/REJECTED (D24, D27 emergente del nested tx rollback-only).
+3. Race condition find→INSERT con `clientOrderId` idempotency → `ConcurrentHashMap` lock + self-injection lazy para commit-DENTRO-de-lock (D25).
+4. Hibernate L1 cache rompía `SELECT FOR UPDATE` → projection-only `findBalanceProjectionByUserId` (D26).
+5. Retries override en `application-test.yml` (50ms × 2 vs 1s × 3) — solo en perfil test.
+
+**Estado bundle anterior HU-F06 (cerrado y mergeado 2026-05-21):**
 
 | Lote | Resumen | HITO |
 |---|---|---|

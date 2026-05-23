@@ -128,6 +128,61 @@ export interface UpdateProfileRequest {
   tickersOfInterest?: string[];
 }
 
+// ─── HU-F09 (orden de compra Market con Alpaca paper trading) ──────────────
+
+export type OrderSide = 'BUY' | 'SELL';
+export type OrderType = 'MARKET';
+export type OrderStatus = 'PENDING' | 'EXECUTED' | 'REJECTED' | 'FAILED';
+
+export interface QuoteRequest {
+  ticker: string;
+  side: OrderSide;
+  quantity: number;
+}
+
+export interface QuoteResponse {
+  ticker: string;
+  side: OrderSide;
+  quantity: number;
+  estimatedUnitPrice: string;
+  estimatedSubtotal: string;
+  commission: string;
+  estimatedTotal: string;
+  currency: string;
+  userBalance: string;
+  sufficientFunds: boolean;
+  marketOpen: boolean;
+  quotedAt: string;
+}
+
+export interface PlaceOrderRequest {
+  clientOrderId: string;
+  ticker: string;
+  side: OrderSide;
+  type: OrderType;
+  quantity: number;
+}
+
+export interface OrderResponse {
+  id: string;
+  clientOrderId: string;
+  ticker: string;
+  side: OrderSide;
+  type: OrderType;
+  quantity: number;
+  quotedUnitPrice: string;
+  executionUnitPrice: string | null;
+  commission: string;
+  quotedTotal: string | null;
+  executionTotal: string | null;
+  status: OrderStatus;
+  alpacaOrderId: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  submittedAt: string;
+  executedAt: string | null;
+}
+
 // ─── Errores estándar ───────────────────────────────────────────────────────
 
 export interface FieldErrorItem {

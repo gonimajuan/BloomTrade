@@ -6,6 +6,10 @@ import co.edu.unbosque.bloomtrade.audit.AuditEventType;
 import co.edu.unbosque.bloomtrade.audit.Auditor;
 import co.edu.unbosque.bloomtrade.notification.dto.AccountLockedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.CancellationScheduledEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.OrderExecutedEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.OrderFailedEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.OrderQueuedEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.OrderRejectedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OtpEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.SubscriptionExpiredEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.SubscriptionPaymentFailedEmailCommand;
@@ -41,6 +45,10 @@ public class MailNotifier implements Notifier {
     private static final String CANCEL_SCHEDULED_SUBJECT = "Tu suscripción premium se cancelará pronto";
     private static final String EXPIRED_SUBJECT = "Tu suscripción premium ha terminado";
     private static final String PAYMENT_FAILED_SUBJECT = "Tu pago de renovación falló";
+    private static final String ORDER_EXECUTED_SUBJECT = "Tu orden de compra fue ejecutada";
+    private static final String ORDER_REJECTED_SUBJECT = "Tu orden de compra fue rechazada";
+    private static final String ORDER_FAILED_SUBJECT = "Tu orden no pudo procesarse";
+    private static final String ORDER_QUEUED_SUBJECT = "Tu orden de compra quedó en cola";
 
     private final JavaMailSender mailSender;
     private final SpringTemplateEngine templateEngine;
@@ -178,6 +186,91 @@ public class MailNotifier implements Notifier {
                 ctx,
                 AuditEventType.SUBSCRIPTION_PAYMENT_FAILED_EMAIL_FAILED,
                 "subscription-payment-failed-email");
+    }
+
+    // ─── HU-F09 — Orden de compra Market ──────────────────────────────────────
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendOrderExecutedEmail(OrderExecutedEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("ticker", command.ticker());
+        ctx.setVariable("quantity", command.quantity());
+        ctx.setVariable("executionUnitPrice", command.executionUnitPrice().toPlainString());
+        ctx.setVariable("executionTotal", command.executionTotal().toPlainString());
+        ctx.setVariable("commission", command.commission().toPlainString());
+        ctx.setVariable("newBalance", command.newBalance().toPlainString());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                ORDER_EXECUTED_SUBJECT,
+                "email/order-executed-buy",
+                ctx,
+                AuditEventType.ORDER_EXECUTED_EMAIL_FAILED,
+                "order-executed-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendOrderRejectedEmail(OrderRejectedEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("ticker", command.ticker());
+        ctx.setVariable("quantity", command.quantity());
+        ctx.setVariable("alpacaReason", command.alpacaReason());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                ORDER_REJECTED_SUBJECT,
+                "email/order-rejected-buy",
+                ctx,
+                AuditEventType.ORDER_REJECTED_EMAIL_FAILED,
+                "order-rejected-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendOrderFailedEmail(OrderFailedEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("ticker", command.ticker());
+        ctx.setVariable("quantity", command.quantity());
+        ctx.setVariable("errorMessage", command.errorMessage());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                ORDER_FAILED_SUBJECT,
+                "email/order-failed-buy",
+                ctx,
+                AuditEventType.ORDER_FAILED_EMAIL_FAILED,
+                "order-failed-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendOrderQueuedEmail(OrderQueuedEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("ticker", command.ticker());
+        ctx.setVariable("quantity", command.quantity());
+        ctx.setVariable("quotedUnitPrice", command.quotedUnitPrice().toPlainString());
+        ctx.setVariable("quotedTotal", command.quotedTotal().toPlainString());
+        ctx.setVariable("commission", command.commission().toPlainString());
+        ctx.setVariable("newBalance", command.newBalance().toPlainString());
+        ctx.setVariable("alpacaOrderId", command.alpacaOrderId());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                ORDER_QUEUED_SUBJECT,
+                "email/order-queued-buy",
+                ctx,
+                AuditEventType.ORDER_QUEUED_EMAIL_FAILED,
+                "order-queued-email");
     }
 
     private void send(

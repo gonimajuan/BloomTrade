@@ -136,5 +136,67 @@ public enum AuditEventType {
     SUBSCRIPTION_EXPIRED_EMAIL_FAILED,
 
     /** Email "tu pago falló" no enviado. */
-    SUBSCRIPTION_PAYMENT_FAILED_EMAIL_FAILED
+    SUBSCRIPTION_PAYMENT_FAILED_EMAIL_FAILED,
+
+    // ─── HU-F09 — Orden de compra Market ─────────────────────────────────────
+
+    /** Orden persistida en estado PENDING tras validaciones iniciales (SPEC §9.1). */
+    ORDER_CREATED,
+
+    /**
+     * Orden ejecutada exitosamente — Alpaca confirmó {@code filled}, débito + upsertPosition
+     * completados (SPEC §9.1). detail: {@code orderId, alpacaOrderId, executionUnitPrice,
+     * executionTotal, commission}.
+     */
+    ORDER_EXECUTED,
+
+    /**
+     * Orden rechazada. Razones: {@code INSUFFICIENT_FUNDS} (race con débito), o
+     * {@code ALPACA_ORDER_REJECTED} (símbolo no soportado, qty inválida del lado Alpaca).
+     * detail: {@code orderId, reason, alpacaReason?}.
+     */
+    ORDER_REJECTED,
+
+    /**
+     * Orden falló por error técnico: Alpaca caída tras 3 retries, market data caído. Saldo NO
+     * descontado. detail: {@code orderId, errorCode, errorMessage}.
+     */
+    ORDER_FAILED,
+
+    /**
+     * Orden encolada en Alpaca pero NO ejecutada dentro de la ventana de polling síncrono —
+     * típicamente porque el mercado está cerrado (HU-F09 D29 emergente Lote H.5). Saldo SÍ
+     * descontado (reserva). detail: {@code orderId, alpacaOrderId, quotedTotal, reason}.
+     */
+    ORDER_QUEUED,
+
+    /**
+     * Request idempotente: el {@code clientOrderId} ya existía en BD. NO se llamó a Alpaca, NO
+     * se debitó. detail: {@code existingOrderId, clientOrderId}.
+     */
+    ORDER_DUPLICATE_REQUEST,
+
+    /**
+     * Usuario con {@code estado != ACTIVE} intentó operar (SPEC §5.3.10). detail:
+     * {@code accountStatus}.
+     */
+    ORDER_BLOCKED_BY_ACCOUNT_STATUS,
+
+    /**
+     * Falló el quote por error en Alpaca Data API (caída post-retries o 429 sostenido).
+     * detail: {@code ticker, reason}.
+     */
+    QUOTE_FAILED,
+
+    /** Email "tu orden fue ejecutada" no enviado. */
+    ORDER_EXECUTED_EMAIL_FAILED,
+
+    /** Email "tu orden fue rechazada por el mercado" no enviado. */
+    ORDER_REJECTED_EMAIL_FAILED,
+
+    /** Email "tu orden no pudo procesarse" no enviado. */
+    ORDER_FAILED_EMAIL_FAILED,
+
+    /** Email "tu orden quedó en cola" no enviado. */
+    ORDER_QUEUED_EMAIL_FAILED
 }

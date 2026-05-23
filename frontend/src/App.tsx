@@ -8,6 +8,7 @@ import { ProfilePage } from './pages/ProfilePage';
 import { PremiumPage } from './pages/PremiumPage';
 import { PremiumSuccessPage } from './pages/PremiumSuccessPage';
 import { PremiumCancelPage } from './pages/PremiumCancelPage';
+import { TradePage } from './pages/TradePage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { useAuth } from './features/auth/context/AuthContext';
 
@@ -60,6 +61,14 @@ function App() {
         element={
           <ProtectedRoute>
             <PremiumCancelPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/trade"
+        element={
+          <ProtectedRoute>
+            <TradePage />
           </ProtectedRoute>
         }
       />

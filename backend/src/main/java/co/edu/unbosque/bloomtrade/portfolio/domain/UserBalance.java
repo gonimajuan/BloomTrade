@@ -57,4 +57,26 @@ public class UserBalance {
     public static UserBalance initial(UUID userId) {
         return new UserBalance(userId, INITIAL_BALANCE, DEFAULT_CURRENCY);
     }
+
+    /**
+     * Aplica un débito sobre el saldo (HU-F09 Lote D). Único punto autorizado para mutar
+     * {@code balance} desde fuera del agregado (encapsulación TAC-M3).
+     *
+     * <p>Invariante defensivo: si el resultado fuera negativo lanza {@link IllegalStateException}
+     * — se espera que {@code PortfolioService} valide PREVIAMENTE con su lock pessimistic
+     * y lance {@code InsufficientFundsException}. Este check existe como red de seguridad ante
+     * un bug del caller; el CHECK constraint de la BD lo capturaría aun antes.
+     */
+    public void applyDebit(BigDecimal amount) {
+        if (amount == null || amount.signum() < 0) {
+            throw new IllegalArgumentException("amount debe ser >= 0, recibido: " + amount);
+        }
+        BigDecimal newBalance = this.balance.subtract(amount);
+        if (newBalance.signum() < 0) {
+            throw new IllegalStateException(
+                    "Débito violaría invariante balance>=0: balance=" + this.balance
+                            + " amount=" + amount);
+        }
+        this.balance = newBalance;
+    }
 }
