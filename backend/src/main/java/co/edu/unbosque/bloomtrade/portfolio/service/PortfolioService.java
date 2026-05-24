@@ -5,8 +5,11 @@ import co.edu.unbosque.bloomtrade.portfolio.domain.UserBalance;
 import co.edu.unbosque.bloomtrade.portfolio.exception.InsufficientFundsException;
 import co.edu.unbosque.bloomtrade.portfolio.repository.PositionRepository;
 import co.edu.unbosque.bloomtrade.portfolio.repository.UserBalanceRepository;
+import co.edu.unbosque.bloomtrade.trading.exception.InsufficientSharesException;
+import co.edu.unbosque.bloomtrade.trading.exception.ShortSellingNotAllowedException;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,18 +17,36 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Operaciones de portafolio del inversionista (HU-F09 Lote D — ARCH §3 PortfolioService).
+ * Operaciones de portafolio del inversionista (HU-F09 Lote D + HU-F10 Lote A — ARCH §3
+ * PortfolioService).
  *
  * <p>Responsabilidades:
  * <ul>
- *   <li>{@link #debit} — descontar fondos del saldo con lock pessimistic (D13)</li>
+ *   <li>{@link #debit} — descontar fondos del saldo con lock pessimistic (HU-F09 D13)</li>
+ *   <li>{@link #credit} — sumar fondos al saldo tras venta (HU-F10 D14)</li>
  *   <li>{@link #upsertPosition} — incrementar la posición de un ticker (recalcula avg_buy_price
  *       como promedio ponderado vía {@link Position#incrementBy})</li>
- *   <li>{@link #getBalance} / {@link #getPositions} — lecturas readOnly</li>
+ *   <li>{@link #decrementPosition} — restar a la posición tras venta con lock pessimistic;
+ *       DELETE de la fila si la cantidad resultante es 0 (HU-F10 D1, D8)</li>
+ *   <li>{@link #getBalance} / {@link #getPositions} / {@link #findPosition} — lecturas readOnly</li>
  * </ul>
  *
  * <p>Compañero arquitectónico: {@code BalanceInitializer} (ya existente, HU-F01) crea el
  * balance inicial. Este {@code PortfolioService} lo muta tras la ejecución de cada orden.
+ *
+ * <p><b>Orden canónico de locks (HU-F10 D12 + D17 emergente Lote D)</b>: balances → positions.
+ * Cuando una operación necesita ambos locks en la misma transacción, debe adquirirlos en
+ * ese orden para evitar deadlocks con otra operación concurrente.
+ * <ul>
+ *   <li>BUY: {@link #debit} bloquea balances; el subsiguiente {@link #upsertPosition}
+ *       toca positions vía Hibernate dirty checking sin lock pessimistic explícito.</li>
+ *   <li>SELL: {@link #validateSellable} bloquea balances PRIMERO (aunque vender no requiera
+ *       pre-validar saldo) y después positions. El {@link #credit} posterior reusa el lock
+ *       balances ya tomado; {@link #decrementPosition} reusa el lock positions.</li>
+ * </ul>
+ * Sin el lock-balances-PRIMERO en SELL, dos órdenes BUY y SELL concurrentes del mismo usuario
+ * sobre el mismo ticker entran en ciclo de espera y Postgres dispara "deadlock detected".
+ * El test {@code TradingServiceSellConcurrencyIT#concurrency_buyAndSellSameTicker_*} verifica.
  */
 @Service
 public class PortfolioService {
@@ -78,6 +99,45 @@ public class PortfolioService {
     }
 
     /**
+     * Suma {@code amount} al saldo del usuario (operación inversa de {@link #debit}). HU-F10:
+     * se invoca tras una venta ejecutada exitosamente para acreditar el producto neto
+     * ({@code execution_unit_price × quantity − commission}).
+     *
+     * <p>Toma lock pessimistic sobre {@code app.user_balances} igual que {@link #debit} —
+     * serializa créditos concurrentes (poco frecuentes pero posibles si dos ventas del mismo
+     * usuario se ejecutan a la vez).
+     *
+     * <p>HU-F10 D14: NO usa {@code noRollbackFor}. A diferencia de {@link #debit}, los errores
+     * de {@code credit} ({@link IllegalArgumentException}, {@link IllegalStateException}) son
+     * defectos de programación o estado corrupto — el rollback completo es la respuesta correcta.
+     *
+     * @return el balance resultante tras el crédito
+     * @throws IllegalArgumentException si {@code amount <= 0}
+     * @throws IllegalStateException si el usuario no tiene fila en {@code app.user_balances}
+     */
+    @Transactional
+    public BigDecimal credit(UUID userId, BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException(
+                    "Credit amount debe ser > 0, recibido: " + amount);
+        }
+        UserBalance balance =
+                userBalanceRepository
+                        .findByUserIdForUpdate(userId)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "Balance no encontrado para userId=" + userId));
+        balance.applyCredit(amount);
+        log.debug(
+                "Crédito aplicado userId={} amount={} newBalance={}",
+                userId,
+                amount,
+                balance.getBalance());
+        return balance.getBalance();
+    }
+
+    /**
      * Incrementa la posición del usuario en el ticker. Si no existe fila para
      * {@code (userId, ticker)}, INSERT con la cantidad y precio iniciales. Si existe, UPDATE
      * recalculando {@code avg_buy_price} como promedio ponderado (ver
@@ -116,6 +176,113 @@ public class PortfolioService {
                         });
     }
 
+    /**
+     * Valida que el usuario tenga posición suficiente para vender SIN mutar nada (HU-F10
+     * Lote B — patrón "validate-before-Alpaca / mutate-after-Alpaca"). Adquiere lock pessimistic
+     * sobre la fila {@code (userId, ticker)} de {@code app.positions} que se retiene durante la
+     * transacción del caller — un decrementPosition subsiguiente en la misma {@code @Transactional}
+     * encuentra el lock ya tomado y reutiliza.
+     *
+     * <p>Justificación del split: si decrementáramos antes de llamar a Alpaca, un Alpaca-rejected
+     * requeriría re-incrementar (más código, más bugs potenciales con el avg_buy_price). Mantener
+     * el lock entre validate y mutate es seguro porque ambas operaciones viven en la misma
+     * {@code @Transactional} del caller ({@code TradingService.handleSellTx}).
+     *
+     * <p>{@code noRollbackFor} análogo a {@link #debit} (HU-F09 D24, D27): cuando las excepciones
+     * de validación se lanzan dentro de un método {@code @Transactional} anidado, Spring marca
+     * la TX outer como rollback-only por default — el commit posterior del INSERT de la orden
+     * REJECTED fallaría con {@code UnexpectedRollbackException}. Excluir estas excepciones del
+     * marcado preserva la fila REJECTED en BD como historial visible para el usuario.
+     *
+     * @return la {@link Position} con el lock pessimistic retenido para la transacción actual.
+     * @throws ShortSellingNotAllowedException si no existe fila o quantity = 0
+     * @throws InsufficientSharesException si quantity < sellQty
+     */
+    @Transactional(
+            noRollbackFor = {
+                ShortSellingNotAllowedException.class,
+                InsufficientSharesException.class
+            })
+    public Position validateSellable(UUID userId, String ticker, int sellQty) {
+        // D17 Lote D — orden canónico de locks balances→positions para evitar deadlock con
+        // BUY concurrente del mismo usuario+ticker (BUY adquiere balances en debit, después
+        // positions en upsert). Tomamos el lock en balances PRIMERO aunque la venta no toque
+        // saldo hasta el credit posterior — la sesión queda dueña de ambos en el orden correcto.
+        // Trade-off aceptado: dos SELLs concurrentes del mismo user (incluso de tickers
+        // distintos) se serializan en balances. Para MVP single-user es insignificante.
+        userBalanceRepository.findByUserIdForUpdate(userId);
+
+        Position position =
+                positionRepository
+                        .findByUserIdAndTickerForUpdate(userId, ticker)
+                        .orElseThrow(() -> new ShortSellingNotAllowedException(ticker, sellQty));
+        if (position.getQuantity() == 0) {
+            throw new ShortSellingNotAllowedException(ticker, sellQty);
+        }
+        if (position.getQuantity() < sellQty) {
+            throw new InsufficientSharesException(position.getQuantity(), sellQty, ticker);
+        }
+        return position;
+    }
+
+    /**
+     * Decrementa la posición del usuario en el ticker tras una venta ejecutada (HU-F10).
+     * Adquiere lock pessimistic sobre la fila {@code (userId, ticker)} de {@code app.positions}.
+     *
+     * <p>Comportamiento (HU-F10 D1, D8):
+     * <ul>
+     *   <li>Si NO existe fila o {@code quantity = 0} → {@link ShortSellingNotAllowedException}.</li>
+     *   <li>Si {@code quantity < sellQuantity} → {@link InsufficientSharesException}.</li>
+     *   <li>Si {@code quantity == sellQuantity} → DELETE de la fila y retorna
+     *       {@link Optional#empty()}.</li>
+     *   <li>Si {@code quantity > sellQuantity} → UPDATE con la cantidad nueva (el
+     *       {@code avg_buy_price} no se modifica) y retorna {@code Optional.of(updated)}.</li>
+     * </ul>
+     *
+     * @return {@link Optional#empty()} si la fila fue borrada por liquidación total;
+     *     {@code Optional.of(position)} con la cantidad actualizada si quedó tenencia.
+     */
+    @Transactional(
+            noRollbackFor = {
+                ShortSellingNotAllowedException.class,
+                InsufficientSharesException.class
+            })
+    public Optional<Position> decrementPosition(UUID userId, String ticker, int sellQuantity) {
+        Position position =
+                positionRepository
+                        .findByUserIdAndTickerForUpdate(userId, ticker)
+                        .orElseThrow(
+                                () -> new ShortSellingNotAllowedException(ticker, sellQuantity));
+        if (position.getQuantity() == 0) {
+            // Defensa en profundidad — D1 borra al llegar a 0, pero si por alguna razón
+            // sobrevivió una fila con qty=0, tratarla como "sin posición".
+            throw new ShortSellingNotAllowedException(ticker, sellQuantity);
+        }
+        if (position.getQuantity() < sellQuantity) {
+            throw new InsufficientSharesException(position.getQuantity(), sellQuantity, ticker);
+        }
+        position.decrementBy(sellQuantity);
+        if (position.isDepleted()) {
+            // Hibernate auto-flushea el UPDATE antes del DELETE (@Modifying). El extra
+            // UPDATE → DELETE es I/O wasted pero correcto. En Lote F evaluar si vale
+            // optimizar (delete directo sin tocar el entity).
+            positionRepository.deleteByUserIdAndTicker(userId, ticker);
+            log.debug(
+                    "Position liquidada y borrada userId={} ticker={} (sellQty={})",
+                    userId,
+                    ticker,
+                    sellQuantity);
+            return Optional.empty();
+        }
+        log.debug(
+                "Position decrementada userId={} ticker={} sellQty={} nuevaQty={}",
+                userId,
+                ticker,
+                sellQuantity,
+                position.getQuantity());
+        return Optional.of(position);
+    }
+
     @Transactional(readOnly = true)
     public BigDecimal getBalance(UUID userId) {
         return userBalanceRepository
@@ -130,5 +297,11 @@ public class PortfolioService {
     @Transactional(readOnly = true)
     public List<Position> getPositions(UUID userId) {
         return positionRepository.findByUserId(userId);
+    }
+
+    /** Lookup readOnly de la posición para el quote SELL (HU-F10 D15: sin lock pessimistic). */
+    @Transactional(readOnly = true)
+    public Optional<Position> findPosition(UUID userId, String ticker) {
+        return positionRepository.findByUserIdAndTicker(userId, ticker);
     }
 }

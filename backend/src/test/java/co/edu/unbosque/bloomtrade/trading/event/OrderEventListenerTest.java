@@ -16,6 +16,7 @@ import co.edu.unbosque.bloomtrade.notification.Notifier;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderExecutedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderFailedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderRejectedEmailCommand;
+import co.edu.unbosque.bloomtrade.trading.domain.OrderSide;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -83,7 +84,8 @@ class OrderEventListenerTest {
                 .record(argThat(e -> e.eventType() == AuditEventType.ORDER_CREATED));
         verify(auditor)
                 .record(argThat(e -> e.eventType() == AuditEventType.ORDER_EXECUTED));
-        verify(notifier, times(1)).sendOrderExecutedEmail(any(OrderExecutedEmailCommand.class));
+        verify(notifier, times(1)).sendOrderExecutedEmailBuy(any(OrderExecutedEmailCommand.class));
+        verify(notifier, never()).sendOrderExecutedEmailSell(any());
     }
 
     @Test
@@ -97,45 +99,153 @@ class OrderEventListenerTest {
                 });
 
         verify(auditor, never()).record(any(AuditEvent.class));
-        verify(notifier, never()).sendOrderExecutedEmail(any());
+        verify(notifier, never()).sendOrderExecutedEmailBuy(any());
+        verify(notifier, never()).sendOrderExecutedEmailSell(any());
     }
 
     @Test
     void onOrderRejected_insufficientFunds_emitsAuditButSkipsEmail() {
         OrderRejectedEvent event =
-                new OrderRejectedEvent(orderId, userId, "AAPL", 10, "INSUFFICIENT_FUNDS", null);
+                new OrderRejectedEvent(
+                        orderId, userId, "AAPL", OrderSide.BUY, 10, "INSUFFICIENT_FUNDS", null);
 
         transactionTemplate.executeWithoutResult(status -> eventPublisher.publishEvent(event));
 
         verify(auditor)
                 .record(argThat(e -> e.eventType() == AuditEventType.ORDER_REJECTED));
-        verify(notifier, never()).sendOrderRejectedEmail(any());
+        verify(notifier, never()).sendOrderRejectedEmailBuy(any());
+        verify(notifier, never()).sendOrderRejectedEmailSell(any());
     }
 
     @Test
     void onOrderRejected_alpacaRejected_emitsAuditAndEmail() {
         OrderRejectedEvent event =
                 new OrderRejectedEvent(
-                        orderId, userId, "AAPL", 10, "ALPACA_ORDER_REJECTED", "qty exceeds buying power");
+                        orderId,
+                        userId,
+                        "AAPL",
+                        OrderSide.BUY,
+                        10,
+                        "ALPACA_ORDER_REJECTED",
+                        "qty exceeds buying power");
 
         transactionTemplate.executeWithoutResult(status -> eventPublisher.publishEvent(event));
 
         verify(auditor)
                 .record(argThat(e -> e.eventType() == AuditEventType.ORDER_REJECTED));
-        verify(notifier, times(1)).sendOrderRejectedEmail(any(OrderRejectedEmailCommand.class));
+        verify(notifier, times(1)).sendOrderRejectedEmailBuy(any(OrderRejectedEmailCommand.class));
+        verify(notifier, never()).sendOrderRejectedEmailSell(any());
     }
 
     @Test
     void onOrderFailed_emitsAuditAndEmail() {
         OrderFailedEvent event =
                 new OrderFailedEvent(
-                        orderId, userId, "AAPL", 10, "ALPACA_API_ERROR", "Alpaca down tras retries");
+                        orderId,
+                        userId,
+                        "AAPL",
+                        OrderSide.BUY,
+                        10,
+                        "ALPACA_API_ERROR",
+                        "Alpaca down tras retries");
 
         transactionTemplate.executeWithoutResult(status -> eventPublisher.publishEvent(event));
 
         verify(auditor)
                 .record(argThat(e -> e.eventType() == AuditEventType.ORDER_FAILED));
-        verify(notifier, times(1)).sendOrderFailedEmail(any(OrderFailedEmailCommand.class));
+        verify(notifier, times(1)).sendOrderFailedEmailBuy(any(OrderFailedEmailCommand.class));
+        verify(notifier, never()).sendOrderFailedEmailSell(any());
+    }
+
+    // ─── HU-F10 Lote C — dispatch SELL (T3.10) ──────────────────────────────
+
+    @Test
+    void onOrderExecuted_sideSell_invokesNotifyExecutedSell_notBuy() {
+        OrderExecutedEvent event =
+                new OrderExecutedEvent(
+                        orderId,
+                        userId,
+                        "AAPL",
+                        OrderSide.SELL,
+                        5,
+                        new BigDecimal("189.9500"),
+                        new BigDecimal("930.75"),
+                        new BigDecimal("19.00"),
+                        new BigDecimal("9047.65"),
+                        "alp-sell-1",
+                        5 /* positionResultingQty */,
+                        Boolean.FALSE);
+
+        transactionTemplate.executeWithoutResult(status -> eventPublisher.publishEvent(event));
+
+        verify(notifier, times(1)).sendOrderExecutedEmailSell(any(OrderExecutedEmailCommand.class));
+        verify(notifier, never()).sendOrderExecutedEmailBuy(any());
+        // Audit ORDER_EXECUTED emitido con detalles SELL.
+        verify(auditor)
+                .record(argThat(e -> e.eventType() == AuditEventType.ORDER_EXECUTED));
+    }
+
+    @Test
+    void onOrderRejected_sideSell_invokesNotifyRejectedSell_notBuy() {
+        OrderRejectedEvent event =
+                new OrderRejectedEvent(
+                        orderId,
+                        userId,
+                        "AAPL",
+                        OrderSide.SELL,
+                        5,
+                        "ALPACA_ORDER_REJECTED",
+                        "asset not tradeable");
+
+        transactionTemplate.executeWithoutResult(status -> eventPublisher.publishEvent(event));
+
+        verify(notifier, times(1)).sendOrderRejectedEmailSell(any(OrderRejectedEmailCommand.class));
+        verify(notifier, never()).sendOrderRejectedEmailBuy(any());
+    }
+
+    @Test
+    void onOrderRejected_sideSellShortSelling_emitsAuditButSkipsEmail() {
+        OrderRejectedEvent event =
+                new OrderRejectedEvent(
+                        orderId, userId, "AAPL", OrderSide.SELL, 5, "SHORT_SELLING_NOT_ALLOWED", null);
+
+        transactionTemplate.executeWithoutResult(status -> eventPublisher.publishEvent(event));
+
+        verify(auditor)
+                .record(argThat(e -> e.eventType() == AuditEventType.ORDER_REJECTED));
+        verify(notifier, never()).sendOrderRejectedEmailSell(any());
+        verify(notifier, never()).sendOrderRejectedEmailBuy(any());
+    }
+
+    @Test
+    void onOrderRejected_sideSellInsufficientShares_emitsAuditButSkipsEmail() {
+        OrderRejectedEvent event =
+                new OrderRejectedEvent(
+                        orderId, userId, "AAPL", OrderSide.SELL, 5, "INSUFFICIENT_SHARES", null);
+
+        transactionTemplate.executeWithoutResult(status -> eventPublisher.publishEvent(event));
+
+        verify(auditor)
+                .record(argThat(e -> e.eventType() == AuditEventType.ORDER_REJECTED));
+        verify(notifier, never()).sendOrderRejectedEmailSell(any());
+    }
+
+    @Test
+    void onOrderFailed_sideSell_invokesNotifyFailedSell_notBuy() {
+        OrderFailedEvent event =
+                new OrderFailedEvent(
+                        orderId,
+                        userId,
+                        "AAPL",
+                        OrderSide.SELL,
+                        5,
+                        "ALPACA_API_ERROR",
+                        "Alpaca down tras retries");
+
+        transactionTemplate.executeWithoutResult(status -> eventPublisher.publishEvent(event));
+
+        verify(notifier, times(1)).sendOrderFailedEmailSell(any(OrderFailedEmailCommand.class));
+        verify(notifier, never()).sendOrderFailedEmailBuy(any());
     }
 
     private OrderExecutedEvent sampleExecutedEvent() {
@@ -143,11 +253,14 @@ class OrderEventListenerTest {
                 orderId,
                 userId,
                 "AAPL",
+                OrderSide.BUY,
                 10,
                 new BigDecimal("184.6200"),
                 new BigDecimal("1883.10"),
                 new BigDecimal("36.90"),
                 new BigDecimal("8116.90"),
-                "alpaca-xyz");
+                "alpaca-xyz",
+                10 /* positionResultingQty BUY */,
+                Boolean.FALSE);
     }
 }

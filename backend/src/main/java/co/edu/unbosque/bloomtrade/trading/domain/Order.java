@@ -147,10 +147,15 @@ public class Order {
     }
 
     /**
-     * Transiciona a {@code EXECUTED} tras confirmación exitosa de Alpaca.
-     * {@code executionTotal} se calcula como {@code executionUnitPrice × quantity + quotedCommission}
-     * (la comisión se honra del quote, no se recalcula sobre el precio de ejecución — decisión
-     * D4 sin slippage: el quote es la base contractual).
+     * Transiciona a {@code EXECUTED} tras confirmación exitosa de Alpaca. Side-aware:
+     * <ul>
+     *   <li>{@code BUY}: {@code executionTotal = executionUnitPrice × quantity + quotedCommission}
+     *       (lo COBRADO al usuario).</li>
+     *   <li>{@code SELL}: {@code executionTotal = executionUnitPrice × quantity − quotedCommission}
+     *       (lo ACREDITADO al usuario — producto neto).</li>
+     * </ul>
+     * La comisión se honra del quote, no se recalcula sobre el precio de ejecución (decisión D4
+     * F09: el quote es la base contractual, sin tolerancia configurable a slippage en MVP).
      */
     public void markAsExecuted(String alpacaOrderId, BigDecimal executionUnitPrice) {
         if (this.status != OrderStatus.PENDING) {
@@ -160,9 +165,11 @@ public class Order {
         this.status = OrderStatus.EXECUTED;
         this.alpacaOrderId = alpacaOrderId;
         this.executionUnitPrice = executionUnitPrice;
-        this.executionTotal = executionUnitPrice
-                .multiply(BigDecimal.valueOf(this.quantity))
-                .add(this.quotedCommission);
+        BigDecimal subtotal = executionUnitPrice.multiply(BigDecimal.valueOf(this.quantity));
+        this.executionTotal =
+                (this.side == OrderSide.BUY)
+                        ? subtotal.add(this.quotedCommission)
+                        : subtotal.subtract(this.quotedCommission);
         this.executedAt = Instant.now();
     }
 

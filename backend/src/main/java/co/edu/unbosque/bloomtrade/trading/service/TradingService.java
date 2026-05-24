@@ -13,13 +13,13 @@ import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaOrderRejectedExceptio
 import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaTradingAdapter;
 import co.edu.unbosque.bloomtrade.integration.alpaca.MarketDataAdapter;
 import co.edu.unbosque.bloomtrade.integration.alpaca.dto.AlpacaOrderResponse;
+import co.edu.unbosque.bloomtrade.portfolio.domain.Position;
 import co.edu.unbosque.bloomtrade.portfolio.exception.InsufficientFundsException;
 import co.edu.unbosque.bloomtrade.portfolio.repository.UserBalanceRepository;
 import co.edu.unbosque.bloomtrade.portfolio.service.PortfolioService;
 import co.edu.unbosque.bloomtrade.trading.domain.Order;
 import co.edu.unbosque.bloomtrade.trading.domain.OrderSide;
 import co.edu.unbosque.bloomtrade.trading.domain.OrderType;
-import co.edu.unbosque.bloomtrade.trading.dto.OrderResponse;
 import co.edu.unbosque.bloomtrade.trading.dto.PlaceOrderRequest;
 import co.edu.unbosque.bloomtrade.trading.dto.QuoteRequest;
 import co.edu.unbosque.bloomtrade.trading.dto.QuoteResponse;
@@ -27,8 +27,9 @@ import co.edu.unbosque.bloomtrade.trading.event.OrderExecutedEvent;
 import co.edu.unbosque.bloomtrade.trading.event.OrderFailedEvent;
 import co.edu.unbosque.bloomtrade.trading.event.OrderQueuedEvent;
 import co.edu.unbosque.bloomtrade.trading.event.OrderRejectedEvent;
+import co.edu.unbosque.bloomtrade.trading.exception.InsufficientSharesException;
 import co.edu.unbosque.bloomtrade.trading.exception.InvalidQuantityException;
-import co.edu.unbosque.bloomtrade.trading.exception.InvalidSideException;
+import co.edu.unbosque.bloomtrade.trading.exception.ShortSellingNotAllowedException;
 import co.edu.unbosque.bloomtrade.trading.mapper.OrderMapper;
 import co.edu.unbosque.bloomtrade.trading.repository.OrderRepository;
 import java.math.BigDecimal;
@@ -46,19 +47,25 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Lógica core de HU-F09 — quote y placeOrder (ARCH §3 TradingService).
+ * Lógica core de HU-F09 + HU-F10 — quote y placeOrder bidireccional (ARCH §3 TradingService).
  *
  * <p>Responsabilidades:
  * <ul>
- *   <li>{@link #quote} — informativo, sin persistencia ni llamadas mutables.</li>
- *   <li>{@link #placeOrder} — transaccional con lock pessimistic sobre balance, llamada
- *       síncrona a Alpaca, polling corto si {@code accepted} no-terminal, persistencia atómica
- *       de la orden + débito + posición, publicación de evento post-commit (Lote F listener).</li>
+ *   <li>{@link #quote} — informativo, sin persistencia ni llamadas mutables. Side-aware
+ *       (HU-F10): para SELL devuelve {@code sufficientShares}/{@code userShares} y
+ *       {@code estimatedTotal} = subtotal − commission (producto neto).</li>
+ *   <li>{@link #placeOrder} — entry point que adquiere el lock por {@code clientOrderId} y delega
+ *       a {@link #placeOrderTx} vía self-proxy.</li>
+ *   <li>{@link #placeOrderTx} — transaccional con dispatch interno por side (HU-F10 D5
+ *       D-TRADING-METHOD): validaciones + quote común, luego {@link #handleBuyTx} o
+ *       {@link #handleSellTx}.</li>
  * </ul>
  *
  * <p>Decisiones aplicadas: D9 Alpaca-only (data via {@link MarketDataAdapter}), D12 BigDecimal
  * HALF_UP, D13 lock pessimistic, D14 idempotencia por {@code clientOrderId}, D15 events
- * post-commit, D16 estados estrechados.
+ * post-commit, D16 estados estrechados. HU-F10 D1 (DELETE en qty=0), D5 (dispatch interno),
+ * D9 (SELL queued con decrement optimistic), D11 (positionDeleted/positionResultingQty en event),
+ * D12 (lock order), D15 (quote sin lock pessimistic).
  *
  * <p>HU-F09 D2: NO se materializan {@code PriorityQueue}+{@code ThreadPool} de ARCH §4 en MVP
  * — request-response síncrono normal. ESC-R1 (1500 órdenes simultáneas) queda como deuda.
@@ -139,16 +146,34 @@ public class TradingService {
     public QuoteResponse quote(UUID userId, QuoteRequest request) {
         validateTicker(request.ticker());
         validateQuantity(request.quantity());
-        validateSideForBuy(request.side());
         requireActiveAccount(userId);
 
         BigDecimal unitPrice = marketDataAdapter.getLatestPrice(request.ticker());
         BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(request.quantity()));
         BigDecimal commission = commissionManager.calculate(INVESTOR_ROLE, subtotal);
-        BigDecimal total = subtotal.add(commission);
         BigDecimal balance = portfolioService.getBalance(userId);
-        boolean sufficientFunds = balance.compareTo(total) >= 0;
         boolean marketOpen = marketScheduleManager.isOpenNow(request.ticker());
+
+        // HU-F10 — semántica side-aware del quote.
+        BigDecimal estimatedTotal;
+        boolean sufficientFunds;
+        boolean sufficientShares;
+        int userShares;
+
+        if (request.side() == OrderSide.SELL) {
+            // D15: quote sin lock pessimistic (informativo, no compromete recursos).
+            Optional<Position> positionOpt =
+                    portfolioService.findPosition(userId, request.ticker());
+            userShares = positionOpt.map(Position::getQuantity).orElse(0);
+            sufficientShares = userShares >= request.quantity();
+            estimatedTotal = subtotal.subtract(commission); // producto neto
+            sufficientFunds = true; // vender NUNCA descuenta balance
+        } else {
+            estimatedTotal = subtotal.add(commission); // lo que se descontará
+            sufficientFunds = balance.compareTo(estimatedTotal) >= 0;
+            sufficientShares = true; // no aplica para BUY
+            userShares = 0; // no aplica para BUY
+        }
 
         return new QuoteResponse(
                 request.ticker(),
@@ -157,10 +182,12 @@ public class TradingService {
                 unitPrice.setScale(4, RoundingMode.HALF_UP).toPlainString(),
                 subtotal.setScale(2, RoundingMode.HALF_UP).toPlainString(),
                 commission.toPlainString(),
-                total.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                estimatedTotal.setScale(2, RoundingMode.HALF_UP).toPlainString(),
                 CURRENCY_USD,
                 balance.setScale(2, RoundingMode.HALF_UP).toPlainString(),
                 sufficientFunds,
+                sufficientShares,
+                userShares,
                 marketOpen,
                 Instant.now());
     }
@@ -168,20 +195,8 @@ public class TradingService {
     // ─── placeOrder ─────────────────────────────────────────────────────────────
 
     /**
-     * Crear y ejecutar una orden Market. Idempotente vía {@code clientOrderId}: si ya existe
-     * fila con esa key, devuelve la orden existente sin re-procesar.
-     *
-     * <p>Flujo: pre-validar fondos (sin lock) → INSERT order PENDING → POST Alpaca → poll si
-     * no-terminal → mark final state + debit + upsertPosition (si EXECUTED) → COMMIT.
-     *
-     * <p>{@code noRollbackFor} preserva las filas de orden marcadas REJECTED/FAILED a pesar de
-     * propagar la excepción al controller (que mapea a 422/502). InsufficientFundsException
-     * también: si se dispara post-Alpaca (race), la orden queda REJECTED commiteada; si se
-     * dispara en el pre-check (antes del INSERT), no hay nada que commitear.
-     */
-    /**
      * Entry point — orquesta el lock + delega la lógica transaccional a {@link #placeOrderTx}
-     * vía self-proxy. NO @Transactional acá: la tx debe arrancar/commitear DENTRO del
+     * vía self-proxy. NO {@code @Transactional} acá: la tx debe arrancar/commitear DENTRO del
      * synchronized para evitar race find→INSERT.
      */
     public PlaceOrderResult placeOrder(UUID userId, PlaceOrderRequest request) {
@@ -191,15 +206,23 @@ public class TradingService {
         }
     }
 
+    /**
+     * Lógica transaccional con dispatch por side. {@code noRollbackFor} preserva las filas de
+     * orden marcadas REJECTED/FAILED a pesar de propagar la excepción al controller (que mapea a
+     * 409/422/502). Aplica a las excepciones de validación BUY y SELL: una vez la fila
+     * {@code app.orders} se persistió con su error_code, el rollback de la tx la perdería.
+     */
     @Transactional(
             noRollbackFor = {
                 AlpacaApiException.class,
                 AlpacaOrderRejectedException.class,
-                InsufficientFundsException.class
+                InsufficientFundsException.class,
+                ShortSellingNotAllowedException.class,
+                InsufficientSharesException.class
             })
     public PlaceOrderResult placeOrderTx(UUID userId, PlaceOrderRequest request) {
         // 1. Idempotency check — dentro del lock garantiza visibilidad del INSERT previo
-        // si otro thread con misma key ya pasó por acá.
+        //    si otro thread con misma key ya pasó por acá.
         Optional<Order> existing = orderRepository.findByClientOrderId(request.clientOrderId());
         if (existing.isPresent()) {
             log.info(
@@ -210,26 +233,46 @@ public class TradingService {
             return new PlaceOrderResult(false, orderMapper.toResponse(existing.get()));
         }
 
-        // 2. Validaciones (lanzan excepciones mapeadas en GlobalExceptionHandler).
+        // 2. Validaciones comunes (sin validateSideForBuy: HU-F10 acepta SELL).
         validateTicker(request.ticker());
         validateQuantity(request.quantity());
-        validateSideForBuy(request.side());
         validateType(request.type());
         requireActiveAccount(userId);
 
-        // 3. Get fresh price + calcular montos.
+        // 3. Get fresh price + calcular subtotal + commission.
         BigDecimal unitPrice = marketDataAdapter.getLatestPrice(request.ticker());
         BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(request.quantity()));
         BigDecimal commission = commissionManager.calculate(INVESTOR_ROLE, subtotal);
-        BigDecimal quotedTotal = subtotal.add(commission);
 
-        // 4. Validar mercado abierto. D11 stub MVP siempre devuelve true → este check no
-        // dispara excepción en MVP. HU-F14 introducirá la lógica real + un MarketClosedException
-        // dedicado (con encolamiento, no rechazo). Llamamos isOpenNow para que esté en el call
-        // graph y trazas reflejen la intención arquitectónica.
+        // 4. quotedTotal side-aware (HU-F10):
+        //    BUY = subtotal + commission (lo cobrado);
+        //    SELL = subtotal − commission (producto neto acreditado).
+        BigDecimal quotedTotal =
+                (request.side() == OrderSide.BUY)
+                        ? subtotal.add(commission)
+                        : subtotal.subtract(commission);
+
+        // 5. Validar mercado abierto (stub MVP — siempre true en F09/F10; HU-F14 introducirá la
+        //    lógica real con encolamiento. Llamamos isOpenNow para que esté en el call graph.)
         marketScheduleManager.isOpenNow(request.ticker());
 
-        // 4b. Pre-validación optimista de fondos (SPEC §5.1 paso 13). Evita el INSERT + llamada
+        // 6. Dispatch por side (HU-F10 D5).
+        if (request.side() == OrderSide.BUY) {
+            return handleBuyTx(userId, request, unitPrice, commission, quotedTotal);
+        }
+        return handleSellTx(userId, request, unitPrice, commission, quotedTotal);
+    }
+
+    // ─── handleBuyTx ────────────────────────────────────────────────────────────
+
+    /** Rama BUY del placeOrderTx — heredada intacta de HU-F09 más {@code side=BUY} en eventos. */
+    private PlaceOrderResult handleBuyTx(
+            UUID userId,
+            PlaceOrderRequest request,
+            BigDecimal unitPrice,
+            BigDecimal commission,
+            BigDecimal quotedTotal) {
+        // Pre-validación optimista de fondos (SPEC F09 §5.1 paso 13). Evita el INSERT + llamada
         // Alpaca para el caso común "saldo claramente insuficiente". Usamos la projection-only
         // findBalanceProjectionByUserId para NO cargar el entity al L1 cache: si lo cargáramos,
         // el subsiguiente findByUserIdForUpdate de portfolioService.debit podría no emitir
@@ -245,7 +288,6 @@ public class TradingService {
             throw new InsufficientFundsException(balance, quotedTotal);
         }
 
-        // 5. INSERT order PENDING.
         Order order =
                 Order.newPending(
                         userId,
@@ -259,7 +301,6 @@ public class TradingService {
                         quotedTotal);
         order = orderRepository.saveAndFlush(order);
 
-        // 6. Submit a Alpaca. Excepciones tipadas se manejan abajo.
         AlpacaOrderResponse alpacaResp;
         try {
             alpacaResp =
@@ -273,6 +314,7 @@ public class TradingService {
                             order.getId(),
                             userId,
                             order.getTicker(),
+                            OrderSide.BUY,
                             order.getQuantity(),
                             "ALPACA_ORDER_REJECTED",
                             rejected.getAlpacaReason()));
@@ -285,23 +327,19 @@ public class TradingService {
                             order.getId(),
                             userId,
                             order.getTicker(),
+                            OrderSide.BUY,
                             order.getQuantity(),
                             "ALPACA_API_ERROR",
                             apiEx.getMessage()));
             throw apiEx;
         }
 
-        // 7. Si no llegó terminal, polear (paper trading suele fill en <500ms; max 600ms total).
         if (!alpacaResp.isTerminal()) {
             alpacaResp = pollUntilTerminal(alpacaResp);
         }
 
-        // 8. Procesar resultado final.
         if (alpacaResp.isFilled()) {
             BigDecimal execPrice = alpacaResp.filledAvgPrice();
-            // Computar executionTotal preview SIN mutar el estado de la orden todavía.
-            // Patrón: débito primero (puede fallar con race condition); si OK, marcar EXECUTED;
-            // si InsufficientFunds, marcar REJECTED desde PENDING — transición válida.
             BigDecimal executionTotal =
                     execPrice
                             .multiply(BigDecimal.valueOf(order.getQuantity()))
@@ -311,8 +349,6 @@ public class TradingService {
             try {
                 newBalance = portfolioService.debit(userId, executionTotal);
             } catch (InsufficientFundsException insuf) {
-                // Race entre quote/quote-side y el débito. Orden queda como REJECTED.
-                // Inconsistencia D17 (acepted MVP): Alpaca paper tiene la posición, BloomTrade no.
                 order.markAsRejected("INSUFFICIENT_FUNDS", insuf.getMessage());
                 order = orderRepository.save(order);
                 eventPublisher.publishEvent(
@@ -320,16 +356,17 @@ public class TradingService {
                                 order.getId(),
                                 userId,
                                 order.getTicker(),
+                                OrderSide.BUY,
                                 order.getQuantity(),
                                 "INSUFFICIENT_FUNDS",
                                 null));
                 throw insuf;
             }
 
-            // Débito exitoso → marcar EXECUTED + upsert posición.
             order.markAsExecuted(alpacaResp.id(), execPrice);
-            portfolioService.upsertPosition(
-                    userId, order.getTicker(), order.getQuantity(), execPrice);
+            Position updated =
+                    portfolioService.upsertPosition(
+                            userId, order.getTicker(), order.getQuantity(), execPrice);
             order = orderRepository.save(order);
 
             eventPublisher.publishEvent(
@@ -337,20 +374,24 @@ public class TradingService {
                             order.getId(),
                             userId,
                             order.getTicker(),
+                            OrderSide.BUY,
                             order.getQuantity(),
                             execPrice,
                             executionTotal,
                             order.getQuotedCommission(),
                             newBalance,
-                            alpacaResp.id()));
+                            alpacaResp.id(),
+                            updated.getQuantity(),
+                            Boolean.FALSE));
 
             return new PlaceOrderResult(true, orderMapper.toResponse(order));
         }
 
         if (alpacaResp.isRejected()) {
-            String reason = alpacaResp.rejectedReason() != null
-                    ? alpacaResp.rejectedReason()
-                    : "sin razón especificada";
+            String reason =
+                    alpacaResp.rejectedReason() != null
+                            ? alpacaResp.rejectedReason()
+                            : "sin razón especificada";
             order.markAsRejected("ALPACA_ORDER_REJECTED", reason);
             order = orderRepository.save(order);
             eventPublisher.publishEvent(
@@ -358,19 +399,17 @@ public class TradingService {
                             order.getId(),
                             userId,
                             order.getTicker(),
+                            OrderSide.BUY,
                             order.getQuantity(),
                             "ALPACA_ORDER_REJECTED",
                             reason));
             throw new AlpacaOrderRejectedException(reason, alpacaResp.id());
         }
 
-        // 9. No-terminal tras polling — orden encolada en Alpaca (típicamente mercado cerrado).
-        //    HU-F09 D29 emergente Lote H.5: no es un fallo. Debitar el cash reservado y dejar
-        //    la orden en PENDING vinculada al alpacaOrderId; el fill llegará al abrir el mercado.
-        //    Deuda registrada: reconciliation job o webhook de Alpaca actualizará el estado a
-        //    EXECUTED + crear la posición cuando finalmente filee (post-MVP).
+        // No-terminal tras polling — BUY queued (D29 F09). Debitar el cash reservado y dejar
+        // la orden en PENDING vinculada al alpacaOrderId; el fill llegará al abrir el mercado.
         log.info(
-                "Alpaca aceptó orden pero no llenó en polling sync — encolada: clientOrderId={} alpacaId={} status={}",
+                "Alpaca aceptó BUY pero no llenó en polling sync — encolada: clientOrderId={} alpacaId={} status={}",
                 request.clientOrderId(),
                 alpacaResp.id(),
                 alpacaResp.status());
@@ -379,7 +418,6 @@ public class TradingService {
         try {
             newBalance = portfolioService.debit(userId, order.getQuotedTotal());
         } catch (InsufficientFundsException insuf) {
-            // Race con otra orden — la encolada se rechaza.
             order.markAsRejected("INSUFFICIENT_FUNDS", insuf.getMessage());
             order = orderRepository.save(order);
             eventPublisher.publishEvent(
@@ -387,6 +425,7 @@ public class TradingService {
                             order.getId(),
                             userId,
                             order.getTicker(),
+                            OrderSide.BUY,
                             order.getQuantity(),
                             "INSUFFICIENT_FUNDS",
                             null));
@@ -400,12 +439,185 @@ public class TradingService {
                         order.getId(),
                         userId,
                         order.getTicker(),
+                        OrderSide.BUY,
                         order.getQuantity(),
                         order.getQuotedUnitPrice(),
                         order.getQuotedCommission(),
                         order.getQuotedTotal(),
                         newBalance,
-                        alpacaResp.id()));
+                        alpacaResp.id(),
+                        null /* BUY queued: no se toca posición todavía */));
+
+        return new PlaceOrderResult(true, orderMapper.toResponse(order));
+    }
+
+    // ─── handleSellTx (HU-F10) ──────────────────────────────────────────────────
+
+    /**
+     * Rama SELL del placeOrderTx (HU-F10). Patrón "valida-antes / muta-después":
+     * <ol>
+     *   <li>{@link PortfolioService#validateSellable} adquiere lock pessimistic sobre la fila
+     *       de {@code app.positions}, lanza {@link ShortSellingNotAllowedException} o
+     *       {@link InsufficientSharesException} si no se puede vender. El lock se retiene en
+     *       la transacción del caller — el subsiguiente {@code decrementPosition} lo reutiliza.</li>
+     *   <li>INSERT order PENDING.</li>
+     *   <li>Submit Alpaca con {@code side=sell}.</li>
+     *   <li>Si {@code filled}: decrementar position (DELETE si qty resultante = 0) + credit
+     *       balance por producto neto + publish {@link OrderExecutedEvent} con {@code side=SELL}
+     *       + positionResultingQty + positionDeleted.</li>
+     *   <li>Si {@code rejected}: no se decrementa ni acredita (posición y balance intactos).</li>
+     *   <li>Si {@code accepted} no-terminal (D9 D-SELL-QUEUED-RISK): decrementar posición
+     *       optimistamente, NO acreditar balance (no sabemos execPrice real). Reconciliación
+     *       post-MVP actualizará el balance al fill.</li>
+     * </ol>
+     */
+    private PlaceOrderResult handleSellTx(
+            UUID userId,
+            PlaceOrderRequest request,
+            BigDecimal unitPrice,
+            BigDecimal commission,
+            BigDecimal quotedTotal) {
+        // 1. Pre-validar con lock — lanza 409 SHORT_SELLING_NOT_ALLOWED / INSUFFICIENT_SHARES.
+        portfolioService.validateSellable(userId, request.ticker(), request.quantity());
+
+        // 2. INSERT order PENDING.
+        Order order =
+                Order.newPending(
+                        userId,
+                        request.clientOrderId(),
+                        request.ticker(),
+                        request.side(),
+                        request.type(),
+                        request.quantity(),
+                        unitPrice,
+                        commission,
+                        quotedTotal);
+        order = orderRepository.saveAndFlush(order);
+
+        // 3. Submit Alpaca con side="sell" (AlpacaTradingAdapter mapea OrderSide.SELL).
+        AlpacaOrderResponse alpacaResp;
+        try {
+            alpacaResp =
+                    alpacaTradingAdapter.submitMarketOrder(
+                            SubmitMarketOrderCommand.from(order));
+        } catch (AlpacaOrderRejectedException rejected) {
+            order.markAsRejected("ALPACA_ORDER_REJECTED", rejected.getAlpacaReason());
+            order = orderRepository.save(order);
+            eventPublisher.publishEvent(
+                    new OrderRejectedEvent(
+                            order.getId(),
+                            userId,
+                            order.getTicker(),
+                            OrderSide.SELL,
+                            order.getQuantity(),
+                            "ALPACA_ORDER_REJECTED",
+                            rejected.getAlpacaReason()));
+            throw rejected;
+        } catch (AlpacaApiException apiEx) {
+            order.markAsFailed("ALPACA_API_ERROR", apiEx.getMessage());
+            order = orderRepository.save(order);
+            eventPublisher.publishEvent(
+                    new OrderFailedEvent(
+                            order.getId(),
+                            userId,
+                            order.getTicker(),
+                            OrderSide.SELL,
+                            order.getQuantity(),
+                            "ALPACA_API_ERROR",
+                            apiEx.getMessage()));
+            throw apiEx;
+        }
+
+        if (!alpacaResp.isTerminal()) {
+            alpacaResp = pollUntilTerminal(alpacaResp);
+        }
+
+        // 4. Filled — mutación atómica: decrement + markExecuted + credit.
+        if (alpacaResp.isFilled()) {
+            BigDecimal execPrice = alpacaResp.filledAvgPrice();
+
+            // markAsExecuted es side-aware: SELL calcula executionTotal = subtotal − commission.
+            order.markAsExecuted(alpacaResp.id(), execPrice);
+            BigDecimal executionTotal = order.getExecutionTotal();
+
+            Optional<Position> updated =
+                    portfolioService.decrementPosition(
+                            userId, order.getTicker(), order.getQuantity());
+
+            BigDecimal newBalance = portfolioService.credit(userId, executionTotal);
+
+            order = orderRepository.save(order);
+
+            eventPublisher.publishEvent(
+                    new OrderExecutedEvent(
+                            order.getId(),
+                            userId,
+                            order.getTicker(),
+                            OrderSide.SELL,
+                            order.getQuantity(),
+                            execPrice,
+                            executionTotal,
+                            order.getQuotedCommission(),
+                            newBalance,
+                            alpacaResp.id(),
+                            updated.map(Position::getQuantity).orElse(0),
+                            updated.isEmpty()));
+
+            return new PlaceOrderResult(true, orderMapper.toResponse(order));
+        }
+
+        // 5. Rejected — posición y balance intactos.
+        if (alpacaResp.isRejected()) {
+            String reason =
+                    alpacaResp.rejectedReason() != null
+                            ? alpacaResp.rejectedReason()
+                            : "sin razón especificada";
+            order.markAsRejected("ALPACA_ORDER_REJECTED", reason);
+            order = orderRepository.save(order);
+            eventPublisher.publishEvent(
+                    new OrderRejectedEvent(
+                            order.getId(),
+                            userId,
+                            order.getTicker(),
+                            OrderSide.SELL,
+                            order.getQuantity(),
+                            "ALPACA_ORDER_REJECTED",
+                            reason));
+            throw new AlpacaOrderRejectedException(reason, alpacaResp.id());
+        }
+
+        // 6. No-terminal — SELL queued (D9). Decrementar posición optimistamente, NO acreditar
+        //    balance (precio de fill desconocido). Email + audit "se encoló, recibirás crédito
+        //    al ejecutarse"; reconciliación post-MVP actualizará el balance al fill.
+        log.info(
+                "Alpaca aceptó SELL pero no llenó en polling sync — encolada: clientOrderId={} alpacaId={} status={}",
+                request.clientOrderId(),
+                alpacaResp.id(),
+                alpacaResp.status());
+
+        Optional<Position> updated =
+                portfolioService.decrementPosition(
+                        userId, order.getTicker(), order.getQuantity());
+
+        order.linkToAlpaca(alpacaResp.id());
+        order = orderRepository.save(order);
+
+        // Balance ACTUAL (sin cambios — la venta no acreditó nada todavía).
+        BigDecimal currentBalance = portfolioService.getBalance(userId);
+
+        eventPublisher.publishEvent(
+                new OrderQueuedEvent(
+                        order.getId(),
+                        userId,
+                        order.getTicker(),
+                        OrderSide.SELL,
+                        order.getQuantity(),
+                        order.getQuotedUnitPrice(),
+                        order.getQuotedCommission(),
+                        order.getQuotedTotal(),
+                        currentBalance,
+                        alpacaResp.id(),
+                        updated.map(Position::getQuantity).orElse(0)));
 
         return new PlaceOrderResult(true, orderMapper.toResponse(order));
     }
@@ -436,12 +648,6 @@ public class TradingService {
         if (quantity == null || quantity <= 0 || quantity > maxQuantityPerOrder) {
             throw new InvalidQuantityException(
                     "Cantidad fuera de rango [1," + maxQuantityPerOrder + "]: " + quantity);
-        }
-    }
-
-    private void validateSideForBuy(OrderSide side) {
-        if (side == OrderSide.SELL) {
-            throw InvalidSideException.sideNotYetImplemented();
         }
     }
 

@@ -32,6 +32,11 @@ import org.thymeleaf.spring6.SpringTemplateEngine;
  * Implementación SMTP de {@link Notifier}. Renderiza plantillas Thymeleaf y envía vía Spring Mail
  * hacia MailHog en dev/test. Los envíos son asíncronos: si SMTP falla, el flujo principal ya
  * confirmado no se revierte; se emite un evento de auditoría de fallo.
+ *
+ * <p>HU-F10 Lote C: 8 métodos de orden (4 BUY + 4 SELL) con templates separadas por side y
+ * subjects específicos. Reutiliza los mismos {@link AuditEventType} F09 para fallos de email —
+ * el side se distingue en el {@code resource} string ({@code order-executed-buy-email} vs
+ * {@code order-executed-sell-email}).
  */
 @Component
 public class MailNotifier implements Notifier {
@@ -45,10 +50,14 @@ public class MailNotifier implements Notifier {
     private static final String CANCEL_SCHEDULED_SUBJECT = "Tu suscripción premium se cancelará pronto";
     private static final String EXPIRED_SUBJECT = "Tu suscripción premium ha terminado";
     private static final String PAYMENT_FAILED_SUBJECT = "Tu pago de renovación falló";
-    private static final String ORDER_EXECUTED_SUBJECT = "Tu orden de compra fue ejecutada";
-    private static final String ORDER_REJECTED_SUBJECT = "Tu orden de compra fue rechazada";
-    private static final String ORDER_FAILED_SUBJECT = "Tu orden no pudo procesarse";
-    private static final String ORDER_QUEUED_SUBJECT = "Tu orden de compra quedó en cola";
+    private static final String ORDER_EXECUTED_BUY_SUBJECT = "Tu orden de compra fue ejecutada";
+    private static final String ORDER_EXECUTED_SELL_SUBJECT = "Tu orden de venta fue ejecutada";
+    private static final String ORDER_REJECTED_BUY_SUBJECT = "Tu orden de compra fue rechazada";
+    private static final String ORDER_REJECTED_SELL_SUBJECT = "Tu orden de venta fue rechazada";
+    private static final String ORDER_FAILED_BUY_SUBJECT = "Tu orden de compra no pudo procesarse";
+    private static final String ORDER_FAILED_SELL_SUBJECT = "Tu orden de venta no pudo procesarse";
+    private static final String ORDER_QUEUED_BUY_SUBJECT = "Tu orden de compra quedó en cola";
+    private static final String ORDER_QUEUED_SELL_SUBJECT = "Tu orden de venta quedó en cola";
 
     private final JavaMailSender mailSender;
     private final SpringTemplateEngine templateEngine;
@@ -188,11 +197,11 @@ public class MailNotifier implements Notifier {
                 "subscription-payment-failed-email");
     }
 
-    // ─── HU-F09 — Orden de compra Market ──────────────────────────────────────
+    // ─── HU-F09 + HU-F10 — Órdenes Market BUY/SELL ──────────────────────────
 
     @Override
     @Async("notificationExecutor")
-    public void sendOrderExecutedEmail(OrderExecutedEmailCommand command) {
+    public void sendOrderExecutedEmailBuy(OrderExecutedEmailCommand command) {
         Context ctx = new Context();
         ctx.setVariable("nombreCompleto", command.nombreCompleto());
         ctx.setVariable("ticker", command.ticker());
@@ -205,16 +214,43 @@ public class MailNotifier implements Notifier {
         send(
                 command.userId(),
                 command.toEmail(),
-                ORDER_EXECUTED_SUBJECT,
+                ORDER_EXECUTED_BUY_SUBJECT,
                 "email/order-executed-buy",
                 ctx,
                 AuditEventType.ORDER_EXECUTED_EMAIL_FAILED,
-                "order-executed-email");
+                "order-executed-buy-email");
     }
 
     @Override
     @Async("notificationExecutor")
-    public void sendOrderRejectedEmail(OrderRejectedEmailCommand command) {
+    public void sendOrderExecutedEmailSell(OrderExecutedEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("ticker", command.ticker());
+        ctx.setVariable("quantity", command.quantity());
+        ctx.setVariable("executionUnitPrice", command.executionUnitPrice().toPlainString());
+        ctx.setVariable("executionTotal", command.executionTotal().toPlainString());
+        ctx.setVariable("commission", command.commission().toPlainString());
+        ctx.setVariable("newBalance", command.newBalance().toPlainString());
+        // SELL-only — el template usa th:if/th:unless sobre estos.
+        ctx.setVariable("positionResultingQty", command.positionResultingQty());
+        ctx.setVariable(
+                "positionDeleted",
+                command.positionDeleted() != null && command.positionDeleted());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                ORDER_EXECUTED_SELL_SUBJECT,
+                "email/order-executed-sell",
+                ctx,
+                AuditEventType.ORDER_EXECUTED_EMAIL_FAILED,
+                "order-executed-sell-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendOrderRejectedEmailBuy(OrderRejectedEmailCommand command) {
         Context ctx = new Context();
         ctx.setVariable("nombreCompleto", command.nombreCompleto());
         ctx.setVariable("ticker", command.ticker());
@@ -224,16 +260,35 @@ public class MailNotifier implements Notifier {
         send(
                 command.userId(),
                 command.toEmail(),
-                ORDER_REJECTED_SUBJECT,
+                ORDER_REJECTED_BUY_SUBJECT,
                 "email/order-rejected-buy",
                 ctx,
                 AuditEventType.ORDER_REJECTED_EMAIL_FAILED,
-                "order-rejected-email");
+                "order-rejected-buy-email");
     }
 
     @Override
     @Async("notificationExecutor")
-    public void sendOrderFailedEmail(OrderFailedEmailCommand command) {
+    public void sendOrderRejectedEmailSell(OrderRejectedEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("ticker", command.ticker());
+        ctx.setVariable("quantity", command.quantity());
+        ctx.setVariable("alpacaReason", command.alpacaReason());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                ORDER_REJECTED_SELL_SUBJECT,
+                "email/order-rejected-sell",
+                ctx,
+                AuditEventType.ORDER_REJECTED_EMAIL_FAILED,
+                "order-rejected-sell-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendOrderFailedEmailBuy(OrderFailedEmailCommand command) {
         Context ctx = new Context();
         ctx.setVariable("nombreCompleto", command.nombreCompleto());
         ctx.setVariable("ticker", command.ticker());
@@ -243,16 +298,35 @@ public class MailNotifier implements Notifier {
         send(
                 command.userId(),
                 command.toEmail(),
-                ORDER_FAILED_SUBJECT,
+                ORDER_FAILED_BUY_SUBJECT,
                 "email/order-failed-buy",
                 ctx,
                 AuditEventType.ORDER_FAILED_EMAIL_FAILED,
-                "order-failed-email");
+                "order-failed-buy-email");
     }
 
     @Override
     @Async("notificationExecutor")
-    public void sendOrderQueuedEmail(OrderQueuedEmailCommand command) {
+    public void sendOrderFailedEmailSell(OrderFailedEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("ticker", command.ticker());
+        ctx.setVariable("quantity", command.quantity());
+        ctx.setVariable("errorMessage", command.errorMessage());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                ORDER_FAILED_SELL_SUBJECT,
+                "email/order-failed-sell",
+                ctx,
+                AuditEventType.ORDER_FAILED_EMAIL_FAILED,
+                "order-failed-sell-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendOrderQueuedEmailBuy(OrderQueuedEmailCommand command) {
         Context ctx = new Context();
         ctx.setVariable("nombreCompleto", command.nombreCompleto());
         ctx.setVariable("ticker", command.ticker());
@@ -266,11 +340,35 @@ public class MailNotifier implements Notifier {
         send(
                 command.userId(),
                 command.toEmail(),
-                ORDER_QUEUED_SUBJECT,
+                ORDER_QUEUED_BUY_SUBJECT,
                 "email/order-queued-buy",
                 ctx,
                 AuditEventType.ORDER_QUEUED_EMAIL_FAILED,
-                "order-queued-email");
+                "order-queued-buy-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendOrderQueuedEmailSell(OrderQueuedEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("ticker", command.ticker());
+        ctx.setVariable("quantity", command.quantity());
+        ctx.setVariable("quotedUnitPrice", command.quotedUnitPrice().toPlainString());
+        ctx.setVariable("quotedTotal", command.quotedTotal().toPlainString());
+        ctx.setVariable("commission", command.commission().toPlainString());
+        ctx.setVariable("newBalance", command.newBalance().toPlainString());
+        ctx.setVariable("alpacaOrderId", command.alpacaOrderId());
+        ctx.setVariable("positionResultingQty", command.positionResultingQty());
+        ctx.setVariable("loginUrl", loginUrl);
+        send(
+                command.userId(),
+                command.toEmail(),
+                ORDER_QUEUED_SELL_SUBJECT,
+                "email/order-queued-sell",
+                ctx,
+                AuditEventType.ORDER_QUEUED_EMAIL_FAILED,
+                "order-queued-sell-email");
     }
 
     private void send(

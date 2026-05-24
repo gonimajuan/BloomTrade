@@ -90,4 +90,33 @@ public class Position {
         this.quantity = newQuantity;
         this.avgBuyPrice = newAvgBuyPrice;
     }
+
+    /**
+     * Decrementa la posición tras una venta (HU-F10). {@code avg_buy_price} se preserva
+     * intacto — sigue reflejando el promedio histórico de compras, necesario para que
+     * HU-F16 calcule ganancia/pérdida sobre la tenencia restante.
+     *
+     * <p>NO emite el DELETE de la fila — eso lo decide el caller ({@code PortfolioService})
+     * tras invocar {@link #isDepleted}. {@code updatedAt} se setea automáticamente vía
+     * {@link UpdateTimestamp}.
+     *
+     * @throws IllegalArgumentException si {@code sellQty <= 0}
+     * @throws IllegalStateException si {@code sellQty > this.quantity} (debería haber sido
+     *     atrapado en la validación previa del servicio — defensa en profundidad)
+     */
+    public void decrementBy(int sellQty) {
+        if (sellQty <= 0) {
+            throw new IllegalArgumentException("sellQty debe ser > 0, recibido: " + sellQty);
+        }
+        if (sellQty > this.quantity) {
+            throw new IllegalStateException(
+                    "sellQty=" + sellQty + " excede quantity=" + this.quantity);
+        }
+        this.quantity -= sellQty;
+    }
+
+    /** {@code true} cuando la venta dejó la posición en cero — el caller debe emitir DELETE. */
+    public boolean isDepleted() {
+        return this.quantity == 0;
+    }
 }

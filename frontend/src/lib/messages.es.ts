@@ -73,6 +73,12 @@ const MESSAGES: Record<string, string> = {
   MARKET_CLOSED:
     'El mercado está cerrado en este momento. Vuelve a intentarlo en horario de mercado.',
   ORDER_DUPLICATE_NOT_AN_ERROR: 'Tu orden ya estaba registrada.',
+
+  // ── HU-F10 (orden de venta Market) ───────────────────────────────────────
+  SHORT_SELLING_NOT_ALLOWED:
+    'No tienes posición en este ticker. BloomTrade no permite ventas en corto.',
+  INSUFFICIENT_SHARES:
+    'No tienes suficientes acciones para vender la cantidad solicitada.',
 };
 
 export function humanFor(code: string): string {

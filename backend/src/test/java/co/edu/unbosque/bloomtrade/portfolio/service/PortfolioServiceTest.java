@@ -9,8 +9,11 @@ import co.edu.unbosque.bloomtrade.auth.repository.UserRepository;
 import co.edu.unbosque.bloomtrade.portfolio.domain.Position;
 import co.edu.unbosque.bloomtrade.portfolio.exception.InsufficientFundsException;
 import co.edu.unbosque.bloomtrade.portfolio.repository.PositionRepository;
+import co.edu.unbosque.bloomtrade.trading.exception.InsufficientSharesException;
+import co.edu.unbosque.bloomtrade.trading.exception.ShortSellingNotAllowedException;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -150,5 +153,160 @@ class PortfolioServiceTest {
                 .hasSize(3)
                 .extracting(Position::getTicker)
                 .containsExactlyInAnyOrder("AAPL", "MSFT", "GOOGL");
+    }
+
+    // ============================================================================
+    // HU-F10 Lote A — credit (T1.10)
+    // ============================================================================
+
+    @Test
+    void credit_happyPath_increasesBalance() {
+        overrideBalance(new BigDecimal("1000.00"));
+
+        BigDecimal newBalance = portfolioService.credit(userId, new BigDecimal("500.00"));
+
+        assertThat(newBalance).isEqualByComparingTo("1500.00");
+        assertThat(portfolioService.getBalance(userId)).isEqualByComparingTo("1500.00");
+    }
+
+    @Test
+    void credit_preservesBigDecimalPrecision() {
+        overrideBalance(new BigDecimal("1000.50"));
+
+        BigDecimal newBalance = portfolioService.credit(userId, new BigDecimal("930.75"));
+
+        // 1000.50 + 930.75 = 1931.25 exacto, sin precision drift.
+        assertThat(newBalance).isEqualByComparingTo("1931.25");
+        assertThat(newBalance.scale()).isEqualTo(2);
+    }
+
+    @Test
+    void credit_negativeAmount_throwsIllegalArgument() {
+        overrideBalance(new BigDecimal("1000.00"));
+
+        assertThatThrownBy(() -> portfolioService.credit(userId, new BigDecimal("-100.00")))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        // Balance intacto — la validación es pre-lock, sin tocar BD.
+        assertThat(portfolioService.getBalance(userId)).isEqualByComparingTo("1000.00");
+    }
+
+    @Test
+    void credit_zeroAmount_throwsIllegalArgument() {
+        overrideBalance(new BigDecimal("1000.00"));
+
+        assertThatThrownBy(() -> portfolioService.credit(userId, BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(portfolioService.getBalance(userId)).isEqualByComparingTo("1000.00");
+    }
+
+    @Test
+    void credit_balanceNotFound_throwsIllegalState() {
+        UUID strangerId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> portfolioService.credit(strangerId, new BigDecimal("100.00")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(strangerId.toString());
+    }
+
+    // ============================================================================
+    // HU-F10 Lote A — decrementPosition (T1.11)
+    // ============================================================================
+
+    @Test
+    void decrement_happyPath_residualQty_preservesAvgBuyPrice() {
+        portfolioService.upsertPosition(userId, "AAPL", 10, new BigDecimal("184.6200"));
+
+        Optional<Position> result = portfolioService.decrementPosition(userId, "AAPL", 3);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getQuantity()).isEqualTo(7);
+        // avg_buy_price NO cambia en venta — sigue reflejando el promedio histórico de compras.
+        assertThat(result.get().getAvgBuyPrice()).isEqualByComparingTo("184.6200");
+
+        // Persistido: re-leer desde repo confirma estado en BD.
+        Position fromDb = positionRepository.findByUserIdAndTicker(userId, "AAPL").orElseThrow();
+        assertThat(fromDb.getQuantity()).isEqualTo(7);
+        assertThat(fromDb.getAvgBuyPrice()).isEqualByComparingTo("184.6200");
+    }
+
+    @Test
+    void decrement_exactQty_deletesRow() {
+        portfolioService.upsertPosition(userId, "AAPL", 5, new BigDecimal("184.6200"));
+
+        Optional<Position> result = portfolioService.decrementPosition(userId, "AAPL", 5);
+
+        assertThat(result).isEmpty();
+        // La fila ya no existe en BD (D1).
+        assertThat(positionRepository.findByUserIdAndTicker(userId, "AAPL")).isEmpty();
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM app.positions WHERE user_id = ? AND ticker = 'AAPL'",
+                                Integer.class,
+                                userId))
+                .isEqualTo(0);
+    }
+
+    @Test
+    void decrement_insufficientShares_throwsAndNoPersist() {
+        portfolioService.upsertPosition(userId, "AAPL", 3, new BigDecimal("184.6200"));
+
+        assertThatThrownBy(() -> portfolioService.decrementPosition(userId, "AAPL", 5))
+                .isInstanceOf(InsufficientSharesException.class)
+                .extracting("available", "requested", "ticker")
+                .containsExactly(3, 5, "AAPL");
+
+        // Posición intacta tras rollback.
+        Position fromDb = positionRepository.findByUserIdAndTicker(userId, "AAPL").orElseThrow();
+        assertThat(fromDb.getQuantity()).isEqualTo(3);
+    }
+
+    @Test
+    void decrement_shortSelling_throwsAndNoPersist() {
+        // Sin posición previa para MSFT.
+
+        assertThatThrownBy(() -> portfolioService.decrementPosition(userId, "MSFT", 5))
+                .isInstanceOf(ShortSellingNotAllowedException.class)
+                .extracting("ticker", "requestedQty")
+                .containsExactly("MSFT", 5);
+
+        // No se creó fila accidentalmente.
+        assertThat(positionRepository.findByUserIdAndTicker(userId, "MSFT")).isEmpty();
+    }
+
+    @Test
+    void decrement_existingPositionWithZeroQty_throwsShortSelling() {
+        // Edge defensivo: D1 borra al llegar a 0, pero si por alguna razón sobreviviera una
+        // fila con qty=0, decrementPosition la trata como "sin posición". Insertamos via
+        // JdbcTemplate para saltarnos los validadores del entity.
+        jdbcTemplate.update(
+                "INSERT INTO app.positions (id, user_id, ticker, quantity, avg_buy_price)"
+                        + " VALUES (?, ?, 'TSLA', 0, 200.00)",
+                UUID.randomUUID(),
+                userId);
+
+        assertThatThrownBy(() -> portfolioService.decrementPosition(userId, "TSLA", 1))
+                .isInstanceOf(ShortSellingNotAllowedException.class);
+
+        // La fila qty=0 sigue ahí (no la borramos como side-effect — solo rechazamos la venta).
+        assertThat(
+                        jdbcTemplate.queryForObject(
+                                "SELECT quantity FROM app.positions WHERE user_id = ? AND ticker = 'TSLA'",
+                                Integer.class,
+                                userId))
+                .isEqualTo(0);
+    }
+
+    @Test
+    void findPosition_existing_returnsIt() {
+        portfolioService.upsertPosition(userId, "AAPL", 10, new BigDecimal("184.6200"));
+
+        assertThat(portfolioService.findPosition(userId, "AAPL")).isPresent();
+    }
+
+    @Test
+    void findPosition_missing_returnsEmpty() {
+        assertThat(portfolioService.findPosition(userId, "NFLX")).isEmpty();
     }
 }
