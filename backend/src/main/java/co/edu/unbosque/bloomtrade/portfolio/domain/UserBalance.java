@@ -79,4 +79,19 @@ public class UserBalance {
         }
         this.balance = newBalance;
     }
+
+    /**
+     * Aplica un crédito sobre el saldo (HU-F10 — producto neto de venta). Inverso de
+     * {@link #applyDebit}. Único punto autorizado para sumar al {@code balance} desde fuera
+     * del agregado.
+     *
+     * <p>El monto debe ser estrictamente positivo. El nuevo balance se setea con la misma
+     * escala/precisión del agregado ({@code NUMERIC(19,2)}).
+     */
+    public void applyCredit(BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("amount debe ser > 0, recibido: " + amount);
+        }
+        this.balance = this.balance.add(amount);
+    }
 }

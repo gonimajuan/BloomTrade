@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Orden de venta rechazada</title>
+  </head>
+  <body style="font-family: Arial, Helvetica, sans-serif; background-color: #f4f5f7; margin: 0; padding: 24px;">
+    <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 8px; padding: 32px;">
+      <h1 style="color: #b91c1c; font-size: 22px; margin-top: 0;">Tu orden de venta fue rechazada</h1>
+      <p style="color: #334155; font-size: 15px;">
+        Hola <strong th:text="${nombreCompleto}">Inversionista</strong>,
+      </p>
+      <p style="color: #334155; font-size: 15px;">
+        El mercado rechazó tu orden de venta de
+        <strong th:text="${quantity}">5</strong>
+        acciones de
+        <strong th:text="${ticker}">AAPL</strong>.
+      </p>
+      <p style="color: #334155; font-size: 14px; background: #fef2f2; border-left: 4px solid #ef4444; padding: 12px 16px; margin: 16px 0;">
+        Razón: <span th:text="${alpacaReason}">asset not tradeable</span>
+      </p>
+      <p style="color: #334155; font-size: 15px;">
+        <strong>Tu posición no fue modificada y tu saldo no fue afectado.</strong>
+      </p>
+      <p style="margin: 28px 0;">
+        <a th:href="${loginUrl}"
+           href="#"
+           style="background: #0ea5e9; color: #ffffff; text-decoration: none; padding: 12px 22px; border-radius: 6px; font-size: 15px; display: inline-block;">
+          Volver a operar
+        </a>
+      </p>
+      <p style="color: #94a3b8; font-size: 12px; margin-bottom: 0;">
+        BloomTrade · Universidad El Bosque · Este es un correo automático, no respondas a este mensaje.
+      </p>
+    </div>
+  </body>
+</html>

@@ -26,8 +26,10 @@ import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaApiException;
 import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaOrderRejectedException;
 import co.edu.unbosque.bloomtrade.integration.alpaca.MarketDataUnavailableException;
 import co.edu.unbosque.bloomtrade.portfolio.exception.InsufficientFundsException;
+import co.edu.unbosque.bloomtrade.trading.exception.InsufficientSharesException;
 import co.edu.unbosque.bloomtrade.trading.exception.InvalidQuantityException;
 import co.edu.unbosque.bloomtrade.trading.exception.InvalidSideException;
+import co.edu.unbosque.bloomtrade.trading.exception.ShortSellingNotAllowedException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -448,6 +450,42 @@ public class GlobalExceptionHandler {
                 String.format(
                         "Saldo insuficiente. Tu saldo: USD %s, requerido: USD %s.",
                         ex.getBalance().toPlainString(), ex.getRequired().toPlainString());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(
+                        ErrorResponse.of(
+                                409,
+                                code,
+                                message,
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(ShortSellingNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleShortSellingNotAllowed(
+            ShortSellingNotAllowedException ex, HttpServletRequest request) {
+        String code = "SHORT_SELLING_NOT_ALLOWED";
+        String message =
+                String.format(
+                        "No tienes posición en %s. BloomTrade no permite ventas en corto.",
+                        ex.getTicker());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(
+                        ErrorResponse.of(
+                                409,
+                                code,
+                                message,
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(InsufficientSharesException.class)
+    public ResponseEntity<ErrorResponse> handleInsufficientShares(
+            InsufficientSharesException ex, HttpServletRequest request) {
+        String code = "INSUFFICIENT_SHARES";
+        String message =
+                String.format(
+                        "Solo tienes %d %s disponibles para vender (solicitaste %d).",
+                        ex.getAvailable(), ex.getTicker(), ex.getRequested());
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(
                         ErrorResponse.of(

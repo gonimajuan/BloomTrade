@@ -24,6 +24,7 @@ import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaOrderRejectedExceptio
 import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaTradingAdapter;
 import co.edu.unbosque.bloomtrade.integration.alpaca.MarketDataAdapter;
 import co.edu.unbosque.bloomtrade.integration.alpaca.dto.AlpacaOrderResponse;
+import co.edu.unbosque.bloomtrade.portfolio.domain.Position;
 import co.edu.unbosque.bloomtrade.portfolio.exception.InsufficientFundsException;
 import co.edu.unbosque.bloomtrade.portfolio.repository.UserBalanceRepository;
 import co.edu.unbosque.bloomtrade.portfolio.service.PortfolioService;
@@ -38,8 +39,9 @@ import co.edu.unbosque.bloomtrade.trading.dto.QuoteResponse;
 import co.edu.unbosque.bloomtrade.trading.event.OrderExecutedEvent;
 import co.edu.unbosque.bloomtrade.trading.event.OrderFailedEvent;
 import co.edu.unbosque.bloomtrade.trading.event.OrderRejectedEvent;
+import co.edu.unbosque.bloomtrade.trading.exception.InsufficientSharesException;
 import co.edu.unbosque.bloomtrade.trading.exception.InvalidQuantityException;
-import co.edu.unbosque.bloomtrade.trading.exception.InvalidSideException;
+import co.edu.unbosque.bloomtrade.trading.exception.ShortSellingNotAllowedException;
 import co.edu.unbosque.bloomtrade.trading.mapper.OrderMapper;
 import co.edu.unbosque.bloomtrade.trading.repository.OrderRepository;
 import java.lang.reflect.Field;
@@ -149,13 +151,67 @@ class TradingServiceTest {
         assertThat(response.userBalance()).isEqualTo("100.00");
     }
 
+    // HU-F10: SELL ya no lanza SIDE_NOT_YET_IMPLEMENTED — el quote responde con
+    // sufficientShares/userShares y estimatedTotal = subtotal − commission (producto neto).
+
     @Test
-    void quote_sellSide_throwsSideNotYetImplemented() {
-        assertThatThrownBy(
-                        () -> service.quote(USER_ID, new QuoteRequest("AAPL", OrderSide.SELL, 10)))
-                .isInstanceOf(InvalidSideException.class)
-                .extracting("errorCode")
-                .isEqualTo("SIDE_NOT_YET_IMPLEMENTED");
+    void quote_sellSideWithSufficientPosition_returnsSufficientSharesTrueAndNetProceeds() {
+        stubActiveUser();
+        when(marketDataAdapter.getLatestPrice("AAPL")).thenReturn(new BigDecimal("190.0000"));
+        when(commissionManager.calculate(eq("INVESTOR"), any(BigDecimal.class)))
+                .thenReturn(new BigDecimal("19.00"));
+        when(portfolioService.getBalance(USER_ID)).thenReturn(new BigDecimal("8116.90"));
+        when(marketScheduleManager.isOpenNow("AAPL")).thenReturn(true);
+        Position pos = Position.newPosition(USER_ID, "AAPL", 10, new BigDecimal("184.6200"));
+        when(portfolioService.findPosition(USER_ID, "AAPL")).thenReturn(Optional.of(pos));
+
+        QuoteResponse response =
+                service.quote(USER_ID, new QuoteRequest("AAPL", OrderSide.SELL, 5));
+
+        assertThat(response.side()).isEqualTo(OrderSide.SELL);
+        // subtotal = 5 × 190 = 950; estimatedTotal SELL = 950 − 19 = 931 (producto neto)
+        assertThat(response.estimatedSubtotal()).isEqualTo("950.00");
+        assertThat(response.commission()).isEqualTo("19.00");
+        assertThat(response.estimatedTotal()).isEqualTo("931.00");
+        assertThat(response.sufficientShares()).isTrue();
+        assertThat(response.userShares()).isEqualTo(10);
+        assertThat(response.sufficientFunds()).isTrue(); // vender NUNCA descuenta balance
+    }
+
+    @Test
+    void quote_sellSideWithoutPosition_returnsSufficientSharesFalseAndZeroShares() {
+        stubActiveUser();
+        when(marketDataAdapter.getLatestPrice("MSFT")).thenReturn(new BigDecimal("420.0000"));
+        when(commissionManager.calculate(eq("INVESTOR"), any(BigDecimal.class)))
+                .thenReturn(new BigDecimal("8.40"));
+        when(portfolioService.getBalance(USER_ID)).thenReturn(new BigDecimal("8116.90"));
+        when(marketScheduleManager.isOpenNow("MSFT")).thenReturn(true);
+        when(portfolioService.findPosition(USER_ID, "MSFT")).thenReturn(Optional.empty());
+
+        QuoteResponse response =
+                service.quote(USER_ID, new QuoteRequest("MSFT", OrderSide.SELL, 1));
+
+        assertThat(response.sufficientShares()).isFalse();
+        assertThat(response.userShares()).isEqualTo(0);
+        assertThat(response.estimatedTotal()).isEqualTo("411.60"); // 420 − 8.40
+    }
+
+    @Test
+    void quote_sellSideWithInsufficientPosition_returnsSufficientSharesFalseWithUserShares() {
+        stubActiveUser();
+        when(marketDataAdapter.getLatestPrice("AAPL")).thenReturn(new BigDecimal("190.0000"));
+        when(commissionManager.calculate(eq("INVESTOR"), any(BigDecimal.class)))
+                .thenReturn(new BigDecimal("19.00"));
+        when(portfolioService.getBalance(USER_ID)).thenReturn(new BigDecimal("8116.90"));
+        when(marketScheduleManager.isOpenNow("AAPL")).thenReturn(true);
+        Position pos = Position.newPosition(USER_ID, "AAPL", 3, new BigDecimal("184.6200"));
+        when(portfolioService.findPosition(USER_ID, "AAPL")).thenReturn(Optional.of(pos));
+
+        QuoteResponse response =
+                service.quote(USER_ID, new QuoteRequest("AAPL", OrderSide.SELL, 5));
+
+        assertThat(response.sufficientShares()).isFalse();
+        assertThat(response.userShares()).isEqualTo(3);
     }
 
     // ─── placeOrder ─────────────────────────────────────────────────────────────
@@ -175,6 +231,11 @@ class TradingServiceTest {
                 .thenReturn(alpacaFilled("alpaca-xyz", new BigDecimal("184.6200")));
         when(portfolioService.debit(eq(USER_ID), any(BigDecimal.class)))
                 .thenReturn(new BigDecimal("8116.90"));
+        // HU-F10: upsertPosition ahora retorna Position (TradingService usa qty post-upsert para
+        // OrderExecutedEvent.positionResultingQty).
+        when(portfolioService.upsertPosition(
+                        eq(USER_ID), eq("AAPL"), eq(10), eq(new BigDecimal("184.6200"))))
+                .thenReturn(Position.newPosition(USER_ID, "AAPL", 10, new BigDecimal("184.6200")));
 
         PlaceOrderResult result =
                 service.placeOrderTx(USER_ID, validPlaceOrderRequest());
@@ -189,7 +250,10 @@ class TradingServiceTest {
         ArgumentCaptor<OrderExecutedEvent> eventCap = ArgumentCaptor.forClass(OrderExecutedEvent.class);
         verify(eventPublisher).publishEvent(eventCap.capture());
         assertThat(eventCap.getValue().ticker()).isEqualTo("AAPL");
+        assertThat(eventCap.getValue().side()).isEqualTo(OrderSide.BUY);
         assertThat(eventCap.getValue().newBalance()).isEqualByComparingTo("8116.90");
+        assertThat(eventCap.getValue().positionResultingQty()).isEqualTo(10);
+        assertThat(eventCap.getValue().positionDeleted()).isFalse();
     }
 
     @Test
@@ -329,11 +393,172 @@ class TradingServiceTest {
                 .thenReturn(alpacaFilled("alp-pending", new BigDecimal("184.6200")));
         when(portfolioService.debit(eq(USER_ID), any(BigDecimal.class)))
                 .thenReturn(new BigDecimal("8116.90"));
+        when(portfolioService.upsertPosition(
+                        eq(USER_ID), eq("AAPL"), eq(10), eq(new BigDecimal("184.6200"))))
+                .thenReturn(Position.newPosition(USER_ID, "AAPL", 10, new BigDecimal("184.6200")));
 
         PlaceOrderResult result = service.placeOrderTx(USER_ID, validPlaceOrderRequest());
 
         assertThat(result.response().status()).isEqualTo(OrderStatus.EXECUTED);
         verify(alpacaTradingAdapter, times(1)).getOrder("alp-pending");
+    }
+
+    // ─── placeOrder SELL (HU-F10) ──────────────────────────────────────────────
+
+    @Test
+    void placeOrder_sellHappyPath_executesDecrementAndCredits() {
+        stubActiveUser();
+        when(orderRepository.findByClientOrderId(CLIENT_ORDER_ID)).thenReturn(Optional.empty());
+        when(marketDataAdapter.getLatestPrice("AAPL")).thenReturn(new BigDecimal("190.0000"));
+        when(commissionManager.calculate(eq("INVESTOR"), any(BigDecimal.class)))
+                .thenReturn(new BigDecimal("19.00"));
+        Position lockedPos = Position.newPosition(USER_ID, "AAPL", 10, new BigDecimal("184.6200"));
+        when(portfolioService.validateSellable(USER_ID, "AAPL", 5)).thenReturn(lockedPos);
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> setIdOnOrder(inv.getArgument(0)));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(alpacaTradingAdapter.submitMarketOrder(any()))
+                .thenReturn(alpacaSellFilled("alp-sell-1", new BigDecimal("189.9500")));
+        Position residual = Position.newPosition(USER_ID, "AAPL", 5, new BigDecimal("184.6200"));
+        when(portfolioService.decrementPosition(USER_ID, "AAPL", 5))
+                .thenReturn(Optional.of(residual));
+        when(portfolioService.credit(eq(USER_ID), any(BigDecimal.class)))
+                .thenReturn(new BigDecimal("9047.65"));
+
+        PlaceOrderResult result = service.placeOrderTx(USER_ID, sellPlaceOrderRequest(5));
+
+        assertThat(result.isNew()).isTrue();
+        assertThat(result.response().status()).isEqualTo(OrderStatus.EXECUTED);
+        assertThat(result.response().side()).isEqualTo(OrderSide.SELL);
+        // SELL executionTotal = 5 × 189.95 − 19.00 = 949.75 − 19.00 = 930.75
+        assertThat(result.response().executionTotal()).isEqualTo("930.7500");
+        verify(portfolioService).decrementPosition(USER_ID, "AAPL", 5);
+        verify(portfolioService).credit(eq(USER_ID), any(BigDecimal.class));
+        verify(portfolioService, never()).debit(any(), any());
+        verify(portfolioService, never()).upsertPosition(any(), anyString(), anyInt(), any());
+
+        ArgumentCaptor<OrderExecutedEvent> eventCap = ArgumentCaptor.forClass(OrderExecutedEvent.class);
+        verify(eventPublisher).publishEvent(eventCap.capture());
+        OrderExecutedEvent captured = eventCap.getValue();
+        assertThat(captured.side()).isEqualTo(OrderSide.SELL);
+        assertThat(captured.positionResultingQty()).isEqualTo(5);
+        assertThat(captured.positionDeleted()).isFalse();
+        assertThat(captured.newBalance()).isEqualByComparingTo("9047.65");
+    }
+
+    @Test
+    void placeOrder_sellExactQty_deletesPositionAndEmitsPositionDeletedTrue() {
+        stubActiveUser();
+        when(orderRepository.findByClientOrderId(CLIENT_ORDER_ID)).thenReturn(Optional.empty());
+        when(marketDataAdapter.getLatestPrice("AAPL")).thenReturn(new BigDecimal("190.0000"));
+        when(commissionManager.calculate(eq("INVESTOR"), any(BigDecimal.class)))
+                .thenReturn(new BigDecimal("19.00"));
+        Position lockedPos = Position.newPosition(USER_ID, "AAPL", 5, new BigDecimal("184.6200"));
+        when(portfolioService.validateSellable(USER_ID, "AAPL", 5)).thenReturn(lockedPos);
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> setIdOnOrder(inv.getArgument(0)));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(alpacaTradingAdapter.submitMarketOrder(any()))
+                .thenReturn(alpacaSellFilled("alp-sell-2", new BigDecimal("189.9500")));
+        // Decrement total → Optional.empty() (fila borrada por D1).
+        when(portfolioService.decrementPosition(USER_ID, "AAPL", 5)).thenReturn(Optional.empty());
+        when(portfolioService.credit(eq(USER_ID), any(BigDecimal.class)))
+                .thenReturn(new BigDecimal("9047.65"));
+
+        service.placeOrderTx(USER_ID, sellPlaceOrderRequest(5));
+
+        ArgumentCaptor<OrderExecutedEvent> eventCap = ArgumentCaptor.forClass(OrderExecutedEvent.class);
+        verify(eventPublisher).publishEvent(eventCap.capture());
+        OrderExecutedEvent captured = eventCap.getValue();
+        assertThat(captured.positionResultingQty()).isEqualTo(0);
+        assertThat(captured.positionDeleted()).isTrue();
+    }
+
+    @Test
+    void placeOrder_sellShortSelling_throws409_alpacaNeverCalled() {
+        stubActiveUser();
+        when(orderRepository.findByClientOrderId(CLIENT_ORDER_ID)).thenReturn(Optional.empty());
+        when(marketDataAdapter.getLatestPrice("AAPL")).thenReturn(new BigDecimal("190.0000"));
+        when(commissionManager.calculate(eq("INVESTOR"), any(BigDecimal.class)))
+                .thenReturn(new BigDecimal("19.00"));
+        when(portfolioService.validateSellable(USER_ID, "AAPL", 5))
+                .thenThrow(new ShortSellingNotAllowedException("AAPL", 5));
+
+        assertThatThrownBy(() -> service.placeOrderTx(USER_ID, sellPlaceOrderRequest(5)))
+                .isInstanceOf(ShortSellingNotAllowedException.class);
+
+        verify(alpacaTradingAdapter, never()).submitMarketOrder(any());
+        verify(orderRepository, never()).saveAndFlush(any());
+        verify(portfolioService, never()).decrementPosition(any(), anyString(), anyInt());
+        verify(portfolioService, never()).credit(any(), any());
+    }
+
+    @Test
+    void placeOrder_sellInsufficientShares_throws409_alpacaNeverCalled() {
+        stubActiveUser();
+        when(orderRepository.findByClientOrderId(CLIENT_ORDER_ID)).thenReturn(Optional.empty());
+        when(marketDataAdapter.getLatestPrice("AAPL")).thenReturn(new BigDecimal("190.0000"));
+        when(commissionManager.calculate(eq("INVESTOR"), any(BigDecimal.class)))
+                .thenReturn(new BigDecimal("19.00"));
+        when(portfolioService.validateSellable(USER_ID, "AAPL", 5))
+                .thenThrow(new InsufficientSharesException(3, 5, "AAPL"));
+
+        assertThatThrownBy(() -> service.placeOrderTx(USER_ID, sellPlaceOrderRequest(5)))
+                .isInstanceOf(InsufficientSharesException.class);
+
+        verify(alpacaTradingAdapter, never()).submitMarketOrder(any());
+        verify(portfolioService, never()).credit(any(), any());
+    }
+
+    @Test
+    void placeOrder_sellAlpacaRejected_marksRejected_positionUntouched() {
+        stubActiveUser();
+        when(orderRepository.findByClientOrderId(CLIENT_ORDER_ID)).thenReturn(Optional.empty());
+        when(marketDataAdapter.getLatestPrice("AAPL")).thenReturn(new BigDecimal("190.0000"));
+        when(commissionManager.calculate(eq("INVESTOR"), any(BigDecimal.class)))
+                .thenReturn(new BigDecimal("19.00"));
+        Position lockedPos = Position.newPosition(USER_ID, "AAPL", 10, new BigDecimal("184.6200"));
+        when(portfolioService.validateSellable(USER_ID, "AAPL", 5)).thenReturn(lockedPos);
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> setIdOnOrder(inv.getArgument(0)));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(alpacaTradingAdapter.submitMarketOrder(any()))
+                .thenThrow(new AlpacaOrderRejectedException("asset not tradeable", "alp-rej"));
+
+        assertThatThrownBy(() -> service.placeOrderTx(USER_ID, sellPlaceOrderRequest(5)))
+                .isInstanceOf(AlpacaOrderRejectedException.class);
+
+        // Posición NO se decrementó ni balance acreditado.
+        verify(portfolioService, never()).decrementPosition(any(), anyString(), anyInt());
+        verify(portfolioService, never()).credit(any(), any());
+
+        ArgumentCaptor<OrderRejectedEvent> eventCap = ArgumentCaptor.forClass(OrderRejectedEvent.class);
+        verify(eventPublisher).publishEvent(eventCap.capture());
+        assertThat(eventCap.getValue().side()).isEqualTo(OrderSide.SELL);
+        assertThat(eventCap.getValue().alpacaReason()).isEqualTo("asset not tradeable");
+    }
+
+    @Test
+    void placeOrder_sellAlpacaApiError_marksFailed_positionUntouched() {
+        stubActiveUser();
+        when(orderRepository.findByClientOrderId(CLIENT_ORDER_ID)).thenReturn(Optional.empty());
+        when(marketDataAdapter.getLatestPrice("AAPL")).thenReturn(new BigDecimal("190.0000"));
+        when(commissionManager.calculate(eq("INVESTOR"), any(BigDecimal.class)))
+                .thenReturn(new BigDecimal("19.00"));
+        Position lockedPos = Position.newPosition(USER_ID, "AAPL", 10, new BigDecimal("184.6200"));
+        when(portfolioService.validateSellable(USER_ID, "AAPL", 5)).thenReturn(lockedPos);
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(inv -> setIdOnOrder(inv.getArgument(0)));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(alpacaTradingAdapter.submitMarketOrder(any()))
+                .thenThrow(new AlpacaApiException("Alpaca down post-retries", 3));
+
+        assertThatThrownBy(() -> service.placeOrderTx(USER_ID, sellPlaceOrderRequest(5)))
+                .isInstanceOf(AlpacaApiException.class);
+
+        verify(portfolioService, never()).decrementPosition(any(), anyString(), anyInt());
+        verify(portfolioService, never()).credit(any(), any());
+
+        ArgumentCaptor<OrderFailedEvent> eventCap = ArgumentCaptor.forClass(OrderFailedEvent.class);
+        verify(eventPublisher).publishEvent(eventCap.capture());
+        assertThat(eventCap.getValue().side()).isEqualTo(OrderSide.SELL);
+        assertThat(eventCap.getValue().errorCode()).isEqualTo("ALPACA_API_ERROR");
     }
 
     // ─── helpers ────────────────────────────────────────────────────────────────
@@ -344,6 +569,26 @@ class TradingServiceTest {
 
     private PlaceOrderRequest validPlaceOrderRequest() {
         return new PlaceOrderRequest(CLIENT_ORDER_ID, "AAPL", OrderSide.BUY, OrderType.MARKET, 10);
+    }
+
+    private PlaceOrderRequest sellPlaceOrderRequest(int qty) {
+        return new PlaceOrderRequest(CLIENT_ORDER_ID, "AAPL", OrderSide.SELL, OrderType.MARKET, qty);
+    }
+
+    private static AlpacaOrderResponse alpacaSellFilled(String id, BigDecimal price) {
+        return new AlpacaOrderResponse(
+                id,
+                CLIENT_ORDER_ID.toString(),
+                "AAPL",
+                "5",
+                "sell",
+                "market",
+                "filled",
+                price,
+                "5",
+                null,
+                Instant.now().toString(),
+                Instant.now().toString());
     }
 
     private static Order setIdOnOrder(Order order) throws Exception {

@@ -10,8 +10,11 @@ interface Props {
 }
 
 /**
- * Toast efímero que confirma la ejecución (SPEC §12.1 paso 5).
+ * Toast efímero que confirma la ejecución (SPEC F09 §12.1 paso 5 + F10 §12.1).
  * Auto-dismiss en {@link AUTO_DISMISS_MS}ms. El padre controla la lifecycle via {@code onClose}.
+ *
+ * <p>HU-F10 side-aware: wording diferente para BUY ("Compraste…") vs SELL ("Vendiste…
+ * recibiste USD X"). Estados queued y idempotente también side-aware.
  */
 export function OrderConfirmationToast({ order, isIdempotent, onClose }: Props) {
   useEffect(() => {
@@ -19,14 +22,18 @@ export function OrderConfirmationToast({ order, isIdempotent, onClose }: Props) 
     return () => window.clearTimeout(handle);
   }, [onClose]);
 
+  const isSell = order.side === 'SELL';
   const isQueued = order.status === 'PENDING';
   const unitPrice = order.executionUnitPrice ?? order.quotedUnitPrice;
   const total = order.executionTotal ?? order.quotedTotal ?? '—';
+  const verb = isSell ? 'venta' : 'compra';
+  const pastVerb = isSell ? 'Vendiste' : 'Compraste';
+
   const headline = isIdempotent
     ? 'Tu orden ya estaba registrada'
     : isQueued
-      ? `Orden en cola: ${order.quantity} ${order.ticker}`
-      : `Orden ejecutada: ${order.quantity} ${order.ticker}`;
+      ? `Orden de ${verb} en cola: ${order.quantity} ${order.ticker}`
+      : `${pastVerb} ${order.quantity} ${order.ticker}`;
   const icon = isQueued ? '⏳' : '✅';
 
   // Paleta: emerald (verde) para EXECUTED; amber (ámbar) para PENDING/QUEUED.
@@ -61,12 +68,15 @@ export function OrderConfirmationToast({ order, isIdempotent, onClose }: Props) 
           </p>
           {isQueued ? (
             <p className={`mt-1 text-xs ${palette.body}`}>
-              Mercado cerrado. Se ejecutará al abrir, al mejor precio disponible.
-              Saldo reservado: USD ${total}.
+              {isSell
+                ? `Mercado cerrado. Recibirás el crédito (USD $${total}) al ejecutarse al abrir.`
+                : `Mercado cerrado. Se ejecutará al abrir, al mejor precio disponible. Saldo reservado: USD $${total}.`}
             </p>
           ) : (
             <p className={`mt-1 text-xs ${palette.body}`}>
-              Precio unitario: USD ${unitPrice} · Total: USD ${total}
+              {isSell
+                ? `Precio: USD $${unitPrice} · Recibiste USD $${total}`
+                : `Precio unitario: USD $${unitPrice} · Total: USD $${total}`}
             </p>
           )}
           {order.alpacaOrderId && (

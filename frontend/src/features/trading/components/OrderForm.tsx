@@ -37,21 +37,33 @@ interface Props {
 }
 
 /**
- * Form de captura del input para una orden Market (SPEC §12.1):
- * ticker (25 permitidos) + side (BUY habilitado, SELL bloqueado) + cantidad (1..10000).
- * Al hacer submit invoca {@code onSubmit(values)}; la mutación de quote vive en el padre
- * para que el panel resultante pueda mostrarse a la par del form.
+ * Form de captura del input para una orden Market (SPEC F09 §12.1 + F10 §12.1):
+ * ticker (25 permitidos) + side (BUY o SELL, ambos habilitados desde HU-F10) +
+ * cantidad (1..10000). Al hacer submit invoca {@code onSubmit(values)}; la mutación
+ * de quote vive en el padre para que el panel resultante pueda mostrarse a la par.
+ *
+ * <p>HU-F10 D10: el {@link TickerDropdown} NO filtra por posiciones del usuario en MVP.
+ * Si elige SELL sobre un ticker sin posición, el backend responde
+ * {@code SHORT_SELLING_NOT_ALLOWED}; el frontend lo renderiza claramente.
  */
 export function OrderForm({ onSubmit, isQuoting, quoteError }: Props) {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isValid },
   } = useForm<OrderFormValues>({
     resolver: zodResolver(orderFormSchema),
     mode: 'onChange',
     defaultValues: { ticker: '', side: 'BUY' as OrderSide, quantity: 1 },
   });
+
+  const currentSide = watch('side');
+  const submitLabel = isQuoting
+    ? 'Cotizando…'
+    : currentSide === 'SELL'
+      ? 'Obtener quote de venta'
+      : 'Obtener quote de compra';
 
   return (
     <form
@@ -80,6 +92,11 @@ export function OrderForm({ onSubmit, isQuoting, quoteError }: Props) {
           disabled={isQuoting}
           {...register('ticker')}
         />
+        {currentSide === 'SELL' && (
+          <p className="mt-1 text-xs text-slate-500">
+            Selecciona un ticker que tengas en tu portafolio. El sistema validará al confirmar.
+          </p>
+        )}
         {errors.ticker && (
           <p className={ERR} role="alert">
             {humanFor(errors.ticker.message ?? '')}
@@ -99,17 +116,14 @@ export function OrderForm({ onSubmit, isQuoting, quoteError }: Props) {
             />
             Comprar
           </label>
-          <label
-            className="flex items-center gap-2 text-sm text-slate-400"
-            title={humanFor('SIDE_NOT_YET_IMPLEMENTED')}
-          >
+          <label className="flex items-center gap-2 text-sm text-slate-700">
             <input
               type="radio"
               value="SELL"
               {...register('side')}
-              disabled
+              disabled={isQuoting}
             />
-            Vender (próximamente)
+            Vender
           </label>
         </div>
         {errors.side && (
@@ -146,7 +160,7 @@ export function OrderForm({ onSubmit, isQuoting, quoteError }: Props) {
         disabled={!isValid || isQuoting}
         className="w-full rounded-md bg-blue-600 px-4 py-2 font-semibold text-white shadow hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {isQuoting ? 'Cotizando…' : 'Obtener quote'}
+        {submitLabel}
       </button>
     </form>
   );

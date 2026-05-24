@@ -147,10 +147,26 @@ export interface QuoteResponse {
   estimatedUnitPrice: string;
   estimatedSubtotal: string;
   commission: string;
+  /**
+   * Side-aware (HU-F10):
+   * - BUY: subtotal + commission (lo que se DESCONTARÁ del saldo).
+   * - SELL: subtotal − commission (lo que se ACREDITARÁ al saldo, producto neto).
+   */
   estimatedTotal: string;
   currency: string;
   userBalance: string;
   sufficientFunds: boolean;
+  /**
+   * HU-F10. Solo significativo para SELL: true si el usuario tiene posición ≥ quantity.
+   * Para BUY siempre true (no aplica).
+   */
+  sufficientShares: boolean;
+  /**
+   * HU-F10. Cantidad actual del usuario en el ticker.
+   * - BUY: 0 si no tiene posición (informativo).
+   * - SELL: cantidad disponible para validar contra quantity solicitada.
+   */
+  userShares: number;
   marketOpen: boolean;
   quotedAt: string;
 }

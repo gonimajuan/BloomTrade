@@ -11,6 +11,7 @@ import co.edu.unbosque.bloomtrade.notification.dto.OrderExecutedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderFailedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderQueuedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderRejectedEmailCommand;
+import co.edu.unbosque.bloomtrade.trading.domain.OrderSide;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,8 +22,9 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Listener post-commit de los 3 eventos de orden (HU-F09 D15). Dispara los efectos colaterales
- * (email + audit log) SIN bloquear la transacción del placeOrder ni participar de su rollback.
+ * Listener post-commit de los 4 eventos de orden (HU-F09 D15, extendido HU-F10). Dispara los
+ * efectos colaterales (email + audit log) SIN bloquear la transacción del placeOrder ni
+ * participar de su rollback.
  *
  * <p>{@code @TransactionalEventListener(phase=AFTER_COMMIT)} garantiza que un rollback del
  * placeOrder NO dispara el listener; los eventos publicados en una tx rollbackeada se descartan
@@ -34,8 +36,15 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * para hacer el lookup del {@link User} (email + nombreCompleto). El email send es {@code @Async}
  * en {@link Notifier} — se dispatcha a otro thread sin esperar.
  *
- * <p>Decisión SPEC §9.2: {@code OrderRejectedEvent} con {@code reason=INSUFFICIENT_FUNDS} NO
+ * <p>Decisión SPEC F09 §9.2 + F10 §9.2: {@code OrderRejectedEvent} con
+ * {@code reason ∈ {INSUFFICIENT_FUNDS, SHORT_SELLING_NOT_ALLOWED, INSUFFICIENT_SHARES}} NO
  * envía email — el usuario ya vio el error en pantalla (response 409). Sí emite el audit log.
+ *
+ * <p><b>HU-F10 Lote B — emails SELL provisionalmente skipped</b>: los métodos del {@link Notifier}
+ * son BUY-only hasta Lote C (D7 D-NOTIFIER-SPLIT renombra a {@code *Buy} y agrega {@code *Sell}).
+ * Mientras tanto, eventos con {@code side=SELL} emiten audit log con detalles enriquecidos pero
+ * el envío del email queda como log {@code warn}. El comportamiento E2E SELL completo (audit +
+ * email) se valida en HITO 5 tras Lote C.
  */
 @Component
 public class OrderEventListener {
@@ -43,6 +52,8 @@ public class OrderEventListener {
     private static final Logger log = LoggerFactory.getLogger(OrderEventListener.class);
     private static final String RESOURCE = "/api/v1/orders";
     private static final String REASON_INSUFFICIENT_FUNDS = "INSUFFICIENT_FUNDS";
+    private static final String REASON_SHORT_SELLING = "SHORT_SELLING_NOT_ALLOWED";
+    private static final String REASON_INSUFFICIENT_SHARES = "INSUFFICIENT_SHARES";
 
     private final Auditor auditor;
     private final Notifier notifier;
@@ -71,9 +82,11 @@ public class OrderEventListener {
                         .actorId(userId)
                         .orderId(orderId)
                         .detail("ticker", event.ticker())
+                        .detail("side", event.side().name())
                         .detail("quantity", event.quantity())
                         .build());
-        auditor.record(
+
+        AuditEvent.Builder executedBuilder =
                 AuditEvent.builder()
                         .eventType(AuditEventType.ORDER_EXECUTED)
                         .resource(RESOURCE)
@@ -81,12 +94,19 @@ public class OrderEventListener {
                         .actorId(userId)
                         .orderId(orderId)
                         .detail("ticker", event.ticker())
+                        .detail("side", event.side().name())
                         .detail("quantity", event.quantity())
                         .detail("executionUnitPrice", event.executionUnitPrice().toPlainString())
                         .detail("executionTotal", event.executionTotal().toPlainString())
                         .detail("commission", event.commission().toPlainString())
-                        .detail("alpacaOrderId", event.alpacaOrderId())
-                        .build());
+                        .detail("alpacaOrderId", event.alpacaOrderId());
+        if (event.positionResultingQty() != null) {
+            executedBuilder.detail("positionResultingQty", event.positionResultingQty());
+        }
+        if (event.positionDeleted() != null && event.positionDeleted()) {
+            executedBuilder.detail("positionDeleted", Boolean.TRUE);
+        }
+        auditor.record(executedBuilder.build());
 
         Optional<User> userOpt = userRepository.findById(event.userId());
         if (userOpt.isEmpty()) {
@@ -94,7 +114,7 @@ public class OrderEventListener {
             return;
         }
         User user = userOpt.get();
-        notifier.sendOrderExecutedEmail(
+        OrderExecutedEmailCommand command =
                 new OrderExecutedEmailCommand(
                         userId,
                         user.getEmail(),
@@ -104,7 +124,16 @@ public class OrderEventListener {
                         event.executionUnitPrice(),
                         event.executionTotal(),
                         event.commission(),
-                        event.newBalance()));
+                        event.newBalance(),
+                        event.positionResultingQty(),
+                        event.positionDeleted());
+
+        // HU-F10 D7: dispatch por side al método correcto del Notifier.
+        if (event.side() == OrderSide.SELL) {
+            notifier.sendOrderExecutedEmailSell(command);
+        } else {
+            notifier.sendOrderExecutedEmailBuy(command);
+        }
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -121,14 +150,21 @@ public class OrderEventListener {
                         .actorId(userId)
                         .orderId(orderId)
                         .detail("ticker", event.ticker())
+                        .detail("side", event.side().name())
                         .detail("quantity", event.quantity())
                         .detail("reason", event.reason())
                         .detail("alpacaReason", event.alpacaReason())
                         .build());
 
-        // SPEC §9.2: NO enviar email para INSUFFICIENT_FUNDS — el usuario ya lo vio en pantalla.
-        if (REASON_INSUFFICIENT_FUNDS.equals(event.reason())) {
-            log.debug("Skipping rejected email for INSUFFICIENT_FUNDS: orderId={}", orderId);
+        // SPEC F09 §9.2 + F10 §9.2: NO enviar email para errores visibles en pantalla
+        // (INSUFFICIENT_FUNDS, SHORT_SELLING_NOT_ALLOWED, INSUFFICIENT_SHARES).
+        if (REASON_INSUFFICIENT_FUNDS.equals(event.reason())
+                || REASON_SHORT_SELLING.equals(event.reason())
+                || REASON_INSUFFICIENT_SHARES.equals(event.reason())) {
+            log.debug(
+                    "Skipping rejected email for visible-on-screen error: orderId={} reason={}",
+                    orderId,
+                    event.reason());
             return;
         }
 
@@ -138,14 +174,20 @@ public class OrderEventListener {
             return;
         }
         User user = userOpt.get();
-        notifier.sendOrderRejectedEmail(
+        OrderRejectedEmailCommand command =
                 new OrderRejectedEmailCommand(
                         userId,
                         user.getEmail(),
                         user.getNombreCompleto(),
                         event.ticker(),
                         event.quantity(),
-                        event.alpacaReason() != null ? event.alpacaReason() : "sin razón especificada"));
+                        event.alpacaReason() != null ? event.alpacaReason() : "sin razón especificada");
+
+        if (event.side() == OrderSide.SELL) {
+            notifier.sendOrderRejectedEmailSell(command);
+        } else {
+            notifier.sendOrderRejectedEmailBuy(command);
+        }
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -162,6 +204,7 @@ public class OrderEventListener {
                         .actorId(userId)
                         .orderId(orderId)
                         .detail("ticker", event.ticker())
+                        .detail("side", event.side().name())
                         .detail("quantity", event.quantity())
                         .detail("errorCode", event.errorCode())
                         .detail("errorMessage", event.errorMessage())
@@ -173,19 +216,26 @@ public class OrderEventListener {
             return;
         }
         User user = userOpt.get();
-        notifier.sendOrderFailedEmail(
+        OrderFailedEmailCommand command =
                 new OrderFailedEmailCommand(
                         userId,
                         user.getEmail(),
                         user.getNombreCompleto(),
                         event.ticker(),
                         event.quantity(),
-                        event.errorMessage() != null ? event.errorMessage() : "error técnico"));
+                        event.errorMessage() != null ? event.errorMessage() : "error técnico");
+
+        if (event.side() == OrderSide.SELL) {
+            notifier.sendOrderFailedEmailSell(command);
+        } else {
+            notifier.sendOrderFailedEmailBuy(command);
+        }
     }
 
     /**
      * Handler de {@link OrderQueuedEvent} — orden aceptada por Alpaca pero NO ejecutada en la
-     * ventana de polling (típicamente mercado cerrado). HU-F09 D29 emergente Lote H.5.
+     * ventana de polling (típicamente mercado cerrado). HU-F09 D29 emergente Lote H.5;
+     * HU-F10 D9 extendido a SELL.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
@@ -193,8 +243,7 @@ public class OrderEventListener {
         String userId = event.userId().toString();
         String orderId = event.orderId().toString();
 
-        // Audit ORDER_CREATED + ORDER_QUEUED juntos: la orden pasó de no-existir a PENDING
-        // (encolada en Alpaca) en una sola transacción del placeOrder.
+        // Audit ORDER_CREATED + ORDER_QUEUED juntos.
         auditor.record(
                 AuditEvent.builder()
                         .eventType(AuditEventType.ORDER_CREATED)
@@ -203,9 +252,11 @@ public class OrderEventListener {
                         .actorId(userId)
                         .orderId(orderId)
                         .detail("ticker", event.ticker())
+                        .detail("side", event.side().name())
                         .detail("quantity", event.quantity())
                         .build());
-        auditor.record(
+
+        AuditEvent.Builder queuedBuilder =
                 AuditEvent.builder()
                         .eventType(AuditEventType.ORDER_QUEUED)
                         .resource(RESOURCE)
@@ -213,10 +264,14 @@ public class OrderEventListener {
                         .actorId(userId)
                         .orderId(orderId)
                         .detail("ticker", event.ticker())
+                        .detail("side", event.side().name())
                         .detail("quantity", event.quantity())
                         .detail("quotedTotal", event.quotedTotal().toPlainString())
-                        .detail("alpacaOrderId", event.alpacaOrderId())
-                        .build());
+                        .detail("alpacaOrderId", event.alpacaOrderId());
+        if (event.positionResultingQty() != null) {
+            queuedBuilder.detail("positionResultingQty", event.positionResultingQty());
+        }
+        auditor.record(queuedBuilder.build());
 
         Optional<User> userOpt = userRepository.findById(event.userId());
         if (userOpt.isEmpty()) {
@@ -224,7 +279,7 @@ public class OrderEventListener {
             return;
         }
         User user = userOpt.get();
-        notifier.sendOrderQueuedEmail(
+        OrderQueuedEmailCommand command =
                 new OrderQueuedEmailCommand(
                         userId,
                         user.getEmail(),
@@ -235,6 +290,13 @@ public class OrderEventListener {
                         event.quotedTotal(),
                         event.commission(),
                         event.newBalance(),
-                        event.alpacaOrderId()));
+                        event.alpacaOrderId(),
+                        event.positionResultingQty());
+
+        if (event.side() == OrderSide.SELL) {
+            notifier.sendOrderQueuedEmailSell(command);
+        } else {
+            notifier.sendOrderQueuedEmailBuy(command);
+        }
     }
 }
