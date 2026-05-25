@@ -60,7 +60,7 @@ const MESSAGES: Record<string, string> = {
   // Nota: INVALID_TICKER y ACCOUNT_NOT_ACTIVE ya existen arriba (HU-F04/F02) y se reusan.
   INVALID_QUANTITY: 'La cantidad debe ser un entero positivo entre 1 y 10000.',
   INVALID_SIDE: 'Operación inválida.',
-  SIDE_NOT_YET_IMPLEMENTED: 'La venta estará disponible próximamente.',
+  // SIDE_NOT_YET_IMPLEMENTED eliminado HU-F18 Lote E (deuda viva #16, dead code post HU-F10).
   INVALID_CLIENT_ORDER_ID:
     'Error técnico al generar la orden. Recarga la página.',
   INSUFFICIENT_FUNDS:
@@ -103,4 +103,41 @@ export const portfolioMessages = {
   pendingBadge: 'Esperando apertura de mercado',
   pnlTooltip: 'Pérdida o ganancia no realizada vs. costo promedio de compra',
   refreshAria: 'Actualizar saldo y posiciones',
+};
+
+// ─── HU-F18 + HU-F17 (dashboard de acciones + historial) ───────────────────
+
+export const dashboardMessages = {
+  title: 'Dashboard',
+  refreshAria: 'Actualizar dashboard',
+  equity: {
+    headline: 'Equity total',
+    pnlPositive: (amount: string, pct: string) =>
+      `P&L no realizado: +${amount} (${pct})`,
+    pnlNegative: (amount: string, pct: string) =>
+      `P&L no realizado: −${amount} (${pct})`,
+    pnlNeutral: 'P&L no realizado: —',
+    withoutPrices: (balance: string) =>
+      `Equity = balance ${balance} (precios de mercado no disponibles).`,
+  },
+  orders: {
+    title: 'Últimas 10 órdenes',
+    empty: 'Aún no has colocado órdenes.',
+    emptyCta: 'Operar ahora',
+    tableHeaders: {
+      ticker: 'Ticker',
+      side: 'Lado',
+      quantity: 'Cantidad',
+      status: 'Estado',
+      date: 'Fecha',
+    },
+    sideBuy: 'COMPRA',
+    sideSell: 'VENTA',
+    status: {
+      PENDING: 'EN COLA',
+      EXECUTED: 'EJECUTADA',
+      REJECTED: 'RECHAZADA',
+      FAILED: 'FALLIDA',
+    } as Record<string, string>,
+  },
 };

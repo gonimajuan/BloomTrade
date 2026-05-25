@@ -1,6 +1,7 @@
 package co.edu.unbosque.bloomtrade.auth.profile.catalog;
 
 import co.edu.unbosque.bloomtrade.auth.profile.domain.Market;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,13 +26,17 @@ public final class AllowedTickers {
     private AllowedTickers() {}
 
     private static Map<Market, List<String>> buildByMarket() {
+        // HU-F18 D25 emergente — Map.copyOf NO garantiza orden de iteración (Java spec
+        // "unspecified"); el dashboard requiere orden NYSE→NASDAQ→LSE→TSE→ASX (oeste→este
+        // por timezone). Collections.unmodifiableMap envuelve el LinkedHashMap preservando
+        // iteración determinista.
         Map<Market, List<String>> map = new LinkedHashMap<>();
         map.put(Market.NYSE,   List.of("AAPL", "MSFT", "JNJ",  "JPM",  "XOM"));
         map.put(Market.NASDAQ, List.of("GOOGL", "AMZN", "META", "TSLA", "NVDA"));
         map.put(Market.LSE,    List.of("HSBA", "BP",   "GSK",  "ULVR", "BARC"));
         map.put(Market.TSE,    List.of("7203", "6758", "9984", "8306", "6861"));
         map.put(Market.ASX,    List.of("BHP",  "CBA",  "CSL",  "WES",  "WOW"));
-        return Map.copyOf(map);
+        return Collections.unmodifiableMap(map);
     }
 
     private static Set<String> buildAll() {

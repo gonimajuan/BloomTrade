@@ -1,7 +1,9 @@
+import { useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ALL_TICKERS } from '@/constants/tickers';
+import { usePortfolioPositions } from '@/features/portfolio/hooks/usePortfolioPositions';
 import { humanFor } from '@/lib/messages.es';
 import { TickerDropdown } from './TickerDropdown';
 import type { OrderSide } from '@/types/api';
@@ -42,9 +44,11 @@ interface Props {
  * cantidad (1..10000). Al hacer submit invoca {@code onSubmit(values)}; la mutación
  * de quote vive en el padre para que el panel resultante pueda mostrarse a la par.
  *
- * <p>HU-F10 D10: el {@link TickerDropdown} NO filtra por posiciones del usuario en MVP.
- * Si elige SELL sobre un ticker sin posición, el backend responde
- * {@code SHORT_SELLING_NOT_ALLOWED}; el frontend lo renderiza claramente.
+ * <p>HU-F18 Lote E (cierre deuda viva #15): cuando {@code side=SELL}, el
+ * {@link TickerDropdown} se filtra por los tickers que el usuario tiene en posición
+ * vía {@code usePortfolioPositions} (queryKey ya cacheado si /portfolio o /dashboard
+ * estuvieron abiertos antes). El backend sigue siendo source of truth
+ * ({@code SHORT_SELLING_NOT_ALLOWED} si el usuario manipula el dropdown).
  */
 export function OrderForm({ onSubmit, isQuoting, quoteError }: Props) {
   const {
@@ -59,6 +63,19 @@ export function OrderForm({ onSubmit, isQuoting, quoteError }: Props) {
   });
 
   const currentSide = watch('side');
+
+  // HU-F18 #15: solo cargamos posiciones cuando side=SELL para evitar el round-trip
+  // en BUY. React Query reusa el cache si /portfolio o /dashboard ya las trajeron.
+  const positionsQuery = usePortfolioPositions();
+  const ownedTickers = useMemo<ReadonlySet<string> | undefined>(() => {
+    if (currentSide !== 'SELL') return undefined;
+    if (!positionsQuery.data) return new Set<string>();
+    return new Set(positionsQuery.data.positions.map((p) => p.ticker));
+  }, [currentSide, positionsQuery.data]);
+  const noPositionsForSell =
+    currentSide === 'SELL' && ownedTickers !== undefined && ownedTickers.size === 0
+      && !positionsQuery.isLoading;
+
   const submitLabel = isQuoting
     ? 'Cotizando…'
     : currentSide === 'SELL'
@@ -89,12 +106,18 @@ export function OrderForm({ onSubmit, isQuoting, quoteError }: Props) {
         <TickerDropdown
           id="ticker"
           className={INPUT}
-          disabled={isQuoting}
+          disabled={isQuoting || noPositionsForSell}
+          ownedTickers={ownedTickers}
           {...register('ticker')}
         />
-        {currentSide === 'SELL' && (
+        {currentSide === 'SELL' && !noPositionsForSell && (
           <p className="mt-1 text-xs text-slate-500">
-            Selecciona un ticker que tengas en tu portafolio. El sistema validará al confirmar.
+            Solo se muestran tickers que tienes en tu portafolio.
+          </p>
+        )}
+        {noPositionsForSell && (
+          <p className="mt-1 text-xs text-amber-700" role="alert">
+            No tienes posiciones disponibles para vender. Realiza una compra primero.
           </p>
         )}
         {errors.ticker && (
