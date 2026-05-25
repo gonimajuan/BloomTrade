@@ -199,6 +199,48 @@ export interface OrderResponse {
   executedAt: string | null;
 }
 
+// ─── HU-F16 + HU-F21 (portafolio y saldo) ──────────────────────────────────
+
+export interface BalanceResponse {
+  balance: string;
+  currency: string;
+  lastUpdatedAt: string;
+}
+
+export interface PositionDto {
+  ticker: string;
+  quantity: number;
+  avgCost: string;
+  costBasis: string;
+  currency: string;
+  /** null si Alpaca data API falló o timeout para este ticker. */
+  currentPrice: string | null;
+  marketValue: string | null;
+  /** Con signo. */
+  unrealizedPnL: string | null;
+  unrealizedPnLPct: string | null;
+}
+
+export interface PendingOrderDto {
+  orderId: string;
+  clientOrderId: string;
+  ticker: string;
+  side: OrderSide;
+  quantity: number;
+  submittedAt: string;
+  quotedTotal: string | null;
+}
+
+/** Estado del mark-to-market. Mapea el {@code marketDataAvailable} top-level del response. */
+export type MarketDataAvailability = 'true' | 'partial' | 'false';
+
+export interface PortfolioPositionsResponse {
+  positions: PositionDto[];
+  pendingOrders: PendingOrderDto[];
+  marketDataAvailable: MarketDataAvailability;
+  fetchedAt: string;
+}
+
 // ─── Errores estándar ───────────────────────────────────────────────────────
 
 export interface FieldErrorItem {

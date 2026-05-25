@@ -24,17 +24,75 @@
 
 | Campo | Valor |
 |---|---|
-| Branch | `feat/HU-F10-orden-venta-market` — local con cambios listos para commit + push + PR. Working tree con: 3 docs SDD untracked (`specs/HU-F10-orden-venta-market/`), `AGENTS.md` modificado (este handoff), backend ~15 archivos modificados + 7 nuevos, frontend 5 archivos modificados, `APRENDIZAJES.md` con sección Día 7. |
-| HU activa | **HU-F10 Venta Market — IMPLEMENTACIÓN CERRADA (HITO 6 listo para commit)**. SDD Pasos 1–5 completos (sesiones 2026-05-23 docs + 2026-05-24 implementación). `specs/HU-F10-orden-venta-market/SPEC.md` v1.0 + `plan.md` v1.1 (con §2.4 D17–D21 emergentes) + `tasks.md`. **HITOs 1–4 verdes**, HITO 5 frontend `npm run build` verde + smoke E2E manual pendiente del humano (NYSE abierto). HITO 6 pendiente del commit + push + PR firmado por humano. |
-| Sprint | 2 en curso. Día 7 (HU-F10) CERRADO 2026-05-24. Próximo: Día 8 (HU-F16 portfolio + HU-F21 saldo — SDD Paso 1 pendiente), Día 9 (HU-F18 dashboard — SDD pendiente), Día 10 (Sprint 1+2 Review/Retro diferidos). Día 5 (HU-F11 Encolar/Mensajería) saltado deliberadamente. |
-| Próximo paso | **El humano firma el commit HU-F10** (mensaje en `C:\Users\juang\AppData\Local\Temp\bt-hu-f10.txt`, ruta completa P6) + push + PR. **Smoke E2E manual** (HITO 5 humano) idealmente con NYSE abierto — martes 26-May 2026 8:30 AM hora COL en adelante post-Memorial Day. Tras merge: arrancar SDD Paso 1 de HU-F16+F21 bundle (portafolio + saldo Día 8) reusando completo el `PortfolioService` de F09+F10. Ver sección "Cómo continuar (post HU-F10 → HU-F16+F21 Día 8)" abajo. |
-| Deuda viva (NO bloqueante) | (1) Mini-HU `HU-F0X-token-rotation-logout`. (2) Tests IT webhooks Stripe con WireMock. (3) `ARCHITECTURE.md` §5 interfaces con prefijo `I`. (4) `useBlocker` requires DataRouter migration. (5) Generación auto de `frontend/constants/tickers.ts` desde OpenAPI. (6) `JWT_REFRESH_SECRET` eliminado de `.env.example`. (7) Sprint 1 Review+Retro diferidos a Día 10. (8) **Reconciliation Alpaca-paper vs BloomTrade BD** — extendido HU-F10 D9: además de BUY queued (cash debitado sin fill), ahora SELL queued (posición decrementada sin crédito acreditado). Riesgo asimétrico: si Alpaca cancela un SELL encolado, usuario pierde posición sin recibir crédito. Job nocturno o webhook handler post-MVP. (9) `clientOrderLocks` ConcurrentHashMap crece monotónico (D25 F09) — MVP single-user insignificante. (10) Polygon.io como alterno de market data (post-MVP). (11) **D28 hardening**: check en `IntegrationConfig.validateCredentials` que rechace `ALPACA_BASE_URL` terminado en `/v2` con mensaje claro. (12) **D29 hardening**: HU-F16 portfolio mostrará "órdenes en cola" cuando entre Día 8 — incluir tanto BUY como SELL queued. (13) HU-F09 orden encolada del demo viernes 2026-05-22: aún pendiente reconciliar manualmente vs Alpaca paper account. (14) **HU-F10 D17 hardening (post-MVP)**: el lock canónico `balances→positions` serializa dos SELLs concurrentes del mismo user sobre tickers DISTINTOS (no necesario funcionalmente). Si volumen multi-user lo justifica, refactorizar a per-ticker locks o lock-free atomic UPDATE. (15) **HU-F10 D10 (post-F16)**: cuando HU-F16 mergee, agregar feature flag o extender `useTickerOptions` para filtrar el `TickerDropdown` por posiciones del usuario cuando side=SELL. (16) **`InvalidSideException.sideNotYetImplemented()` dead code** post HU-F10: el método quedó como factory invocable pero nunca se llama; borrar en Día 8+ si confirmamos que ningún test F09 lo invoca. |
+| Branch | `feat/HU-F16-F21-portafolio-saldo` — local con cambios listos para commit + push + PR. Working tree con: 3 docs SDD untracked (`specs/HU-F16-F21-portafolio-saldo/`), `AGENTS.md` modificado (este handoff), backend 8 archivos productivos nuevos + 4 tests nuevos + 3 modificados, frontend 8 archivos nuevos + 4 modificados, `APRENDIZAJES.md` con sección Día 8. |
+| HU activa | **Bundle HU-F16 + HU-F21 (Portafolio y Saldo) — IMPLEMENTACIÓN CERRADA (HITO 6 listo para commit)**. SDD Pasos 1–5 completos en la sesión 2026-05-24. `specs/HU-F16-F21-portafolio-saldo/SPEC.md` v1.0 + `plan.md` v1.0 con §2.4 D17–D18 emergentes + `tasks.md`. **HITOs 1–5 verdes** (`mvn verify` 286 tests, 0 fail, 0 error). HITO 4 smoke visual humano pendiente (no bloqueante). HITO 6 pendiente del commit + push + PR firmado por humano. |
+| Sprint | 2 en curso. Día 8 (HU-F16+F21) CERRADO 2026-05-24. Próximo: Día 9 (HU-F18 dashboard — SDD Paso 1 pendiente), Día 10 (Sprint 1+2 Review/Retro diferidos). Día 5 (HU-F11 Encolar/Mensajería) saltado deliberadamente. |
+| Próximo paso | **El humano firma el commit HU-F16+F21** (mensaje en `C:\Users\juang\AppData\Local\Temp\bt-hu-f16-f21.txt`, ruta completa P6) + push + PR. **Smokes visuales pendientes** (no bloqueantes): (a) login → /portfolio → ver balance card + tabla posiciones de F09/F10 + pending orders si las hay; (b) operar en /trade y volver → datos refrescados; (c) simular Alpaca data API caído → ver banner amarillo + tabla con "—". Tras merge: arrancar SDD Paso 1 de HU-F18 dashboard. Ver sección "Cómo continuar (post HU-F16+F21 → HU-F18 Día 9)" abajo. |
+| Deuda viva (NO bloqueante) | (1) Mini-HU `HU-F0X-token-rotation-logout` — ahora también arregla globalmente el 401 vs 403 sin JWT (HU-F16+F21 D17 emergente). (2) Tests IT webhooks Stripe con WireMock. (3) `ARCHITECTURE.md` §5 interfaces con prefijo `I`. (4) `useBlocker` requires DataRouter migration. (5) Generación auto de `frontend/constants/tickers.ts` desde OpenAPI. (6) `JWT_REFRESH_SECRET` eliminado de `.env.example`. (7) Sprint 1 Review+Retro diferidos a Día 10. (8) **Reconciliation Alpaca-paper vs BloomTrade BD** — extendido HU-F10 D9. Mitigado UX-wise por HU-F16 `pendingOrders[]` que muestra el drift al usuario. Fix real (job nocturno) sigue pendiente. (9) `clientOrderLocks` ConcurrentHashMap crece monotónico (D25 F09) — MVP single-user insignificante. (10) Polygon.io como alterno de market data (post-MVP). (11) **D28 F09 hardening**: check en `IntegrationConfig.validateCredentials` que rechace `ALPACA_BASE_URL` terminado en `/v2` con mensaje claro. (12) **D29 F09 hardening**: ya implementado en HU-F16 `pendingOrders[]` (BUY + SELL queued ambos visibles). (13) HU-F09 orden encolada del demo viernes 2026-05-22: aún pendiente reconciliar manualmente vs Alpaca paper account. (14) **HU-F10 D17 hardening (post-MVP)**: lock canónico `balances→positions` serializa SELLs concurrentes en tickers distintos. Refactor a per-ticker locks si multi-user. (15) **HU-F10 D10 (post-F16)**: extender `useTickerOptions` para filtrar `TickerDropdown` por posiciones cuando side=SELL — ahora que F16 mergee, frontend puede consultar `usePortfolioPositions` y derivar la lista. (16) **`InvalidSideException.sideNotYetImplemented()` dead code** post HU-F10: dead code confirmado, borrar en Día 9. (17) **NUEVA HU-F16 D17**: 403 vs 401 sin JWT cross-cutting — diferido a mini-HU `HU-F0X-token-rotation-logout` que va a tocar el filter. (18) **NUEVA HU-F16 D2 PERF**: `MarketDataAdapter` tiene retry interno 3× con backoff exp (worst ~7s/ticker). El cap del orchestrator de 1.5s lo dominaba — si en el futuro queremos aprovechar el retry para tickers individuales lentos, ajustar cap o desactivar retry per-call. (19) **Cache de market data**: HU-F18 dashboard va a re-consultar los mismos tickers que F16. Considerar Redis cache con TTL de 30-60s para evitar 2× round-trips a Alpaca por el mismo precio en la misma vista de usuario. Post-MVP. |
 
 ---
 
-## Cómo continuar (post HU-F10 → HU-F16+F21 Día 8)
+## Cómo continuar (post HU-F16+F21 → HU-F18 Día 9)
 
-**Estado actual (2026-05-24, cierre de sesión implementación HU-F10):**
+**Estado actual (2026-05-24, cierre de sesión implementación HU-F16+F21):**
+
+- HU-F16+F21 implementación completa en branch `feat/HU-F16-F21-portafolio-saldo`. **286 tests verdes (231 unit + 55 IT)**, 0 regresiones. Frontend `npm run build` verde (2567 módulos).
+- HITOs 1–5 ✅ (backend + tests IT + frontend build + verify completo). HITO 4 smoke visual humano pendiente (no bloqueante — sin tests UI por [[feedback-coverage-vs-velocidad]]). HITO 6 ⏸️ commit + push + PR firmado por humano.
+- Decisiones emergentes registradas en `plan.md` §2.4: D17 (403 vs 401 sin JWT — cross-cutting, diferido a mini-HU token-rotation-logout), D18 (`OrderByTicker` en repo — JsonPath filter no funciona en MockMvc + UX bonus orden estable).
+- SPEC sin bump v1.1 — todas las decisiones emergentes son implementation-detail, no afectan contratos API.
+- APRENDIZAJES.md con sección Día 8 (9 reflexiones técnicas + meta sobre SDD en bundle small).
+
+**Lotes HU-F16+F21 cerrados (A–F):**
+
+| Lote | HITO | Resumen | Tests añadidos |
+|---|---|---|---|
+| A | 1 ✅ | 4 DTOs records (`BalanceResponse`, `PendingOrderDto`, `PositionDto`, `PortfolioPositionsResponse`). `OrderRepository.findByUserIdAndStatusAndAlpacaOrderIdIsNotNullOrderBySubmittedAtDesc` derived query. `PositionRepository.findByUserIdAndQuantityGreaterThan` (D12 defensa qty=0). `PortfolioService` +inject OrderRepository, +`getPendingOrders`, +`getBalanceEntity`, modificación `getPositions` con filtro qty>0. | 7 unit (1 filter qty=0 + 4 pendingOrders + 2 getBalanceEntity) |
+| B | 2 ✅ | `PortfolioConfig` con `@Bean ExecutorService marketDataExecutor` (8 threads daemon, destroyMethod). `MarketDataOrchestrator` con `CompletableFuture.supplyAsync(...).completeOnTimeout(1500ms)` por ticker — cap garantiza endpoint bounded ~2s independiente de retries internos del adapter. | 7 unit (empty/null/all-success/one-exception/one-timeout/all-fail/partial-mix) |
+| C | 3 ✅ | `PortfolioMapper` manual (stringificado scale=2 HALF_UP, cálculos compuestos marketValue/PnL/PnLPct, marketDataAvailable lógica 4-casos). `PortfolioController` 2 endpoints REST `@AuthenticationPrincipal AuthenticatedUser`. **2 bugs emergentes durante el lote**: D17 (403 vs 401 cross-cutting), D18 (ORDER BY ticker para JsonPath determinístico). **Fix adicional**: 1ra versión usó `@AuthenticationPrincipal User user` (entity JPA) → 500 InternalServerError. Convención del proyecto es `AuthenticatedUser principal` + `principal.userId()` (grep al codebase lo confirmó). | 10 PortfolioMapperTest + 8 PortfolioControllerIT |
+| D | 4 ✅ | Frontend: `types/api.ts` +4 interfaces. `portfolioApi.ts` 2 wrappers. 2 hooks React Query (`useBalance`, `usePortfolioPositions`) con `staleTime: 30s + refetchOnWindowFocus`. 4 components (`BalanceCard` con `RefreshCw` lucide-react + relative time date-fns, `PositionsTable` con P&L color-coded `text-emerald-600`/`text-rose-600` + iconos `TrendingUp/TrendingDown` para a11y, `PendingOrdersPanel` colapsable `<details open>`, `MarketDataBanner` 3 estados). `PortfolioPage` en `/pages/`. `App.tsx` ruta `/portfolio` protegida. `AppHeader` link "Portafolio". `messages.es.ts` +objeto `portfolioMessages` con 10 copys ES-CO. `npm run build` verde 2567 módulos. Smoke visual humano pendiente. | 0 (skipped per [[feedback-coverage-vs-velocidad]]) |
+| E | 5 ✅ | `PortfolioControllerIT` +4 IT (cross-user `/positions` con WireMock verify NO leak, cross-user `/balance`, `lastUpdatedAt` cambia tras `credit` real, defensa qty=0 desde HTTP). Helper `SeededUser` record + `seedSecondUser`. `mvn verify` completo: **286 tests verdes (231 unit + 55 IT)**, 0 regresiones. | 4 IT |
+| F | 6 ⏸️ | `plan.md` §2.4 con D17–D18. `APRENDIZAJES.md` sección "Día 8 — HU-F16+F21". `AGENTS.md` handoff actualizado (este bloque). Commit message en `C:\Users\juang\AppData\Local\Temp\bt-hu-f16-f21.txt`. SPEC NO bump (decisiones implementation-detail). | — |
+
+**Bugs encontrados y arreglados durante implementación HU-F16+F21:**
+
+1. **D17 — 403 vs 401 sin JWT** atrapado por `PortfolioControllerIT.get*_withoutJwt_returns401`. Causa: el filter solo emite 401 con token inválido/expirado; sin header Spring Security 6 cae en 403 default. Fix scope F16: ajustar tests a esperar 403 + comentario explicativo. Fix real diferido a mini-HU `HU-F0X-token-rotation-logout` que ya va a tocar el filter (agregar `AuthenticationEntryPoint`). NO arreglar acá (cross-cutting, riesgo regresión).
+2. **D18 — JsonPath filter no funciona en MockMvc** atrapado por `getPositions_happyMarkToMarket` (jsonPath `$.positions[?(@.ticker=='AAPL')]` retornaba null). Fix: rename `findByUserIdAndQuantityGreaterThan` a `OrderByTicker` (alfabético ASC) + tests usan índices `positions[0]/[1]`. UX bonus: listado estable entre requests.
+3. **Fix de convención `@AuthenticationPrincipal AuthenticatedUser` vs `User`** (no registrado como D — convención obvia tras grep). Causa: 500 InternalServerError porque Spring inyecta record `AuthenticatedUser`, no entity JPA. Aprendizaje: al crear primer controller en módulo nuevo, `grep -r "@AuthenticationPrincipal"` antes de elegir el tipo.
+
+**Lo primero del humano (HITO 6 pre-merge):**
+
+1. **Smoke visual** (no bloqueante — usuario lo hará "después"):
+   - `docker compose up -d --build` (rebuild para que frontend tome los nuevos archivos).
+   - Login → /portfolio. Esperado: card de saldo arriba con USD formato es-CO + tabla posiciones (de F09/F10 si existen) con P&L color-coded + sección "Órdenes en cola" si las hay (BUY o SELL queued del demo).
+   - Operar en /trade (BUY o SELL pequeño) y volver → datos refrescados automáticamente (refetchOnWindowFocus).
+   - Click botón ↻ del BalanceCard → ambas queries re-fetcheadas.
+   - (Opcional) Simular Alpaca data API caído — `docker compose pause` no aplica al adapter (es outbound HTTP a `data.alpaca.markets`); alternativa: bloquear DNS con `127.0.0.1 data.alpaca.markets` en hosts. Banner amarillo "Precios de mercado temporalmente no disponibles" + tabla con "—".
+
+2. **Commit + Push + PR**:
+   - `git add -A`
+   - `git commit -F C:\Users\juang\AppData\Local\Temp\bt-hu-f16-f21.txt` (ruta completa literal — P6).
+   - `git push -u origin feat/HU-F16-F21-portafolio-saldo`
+   - `gh pr create` o desde GitHub. Squash and merge a `main`.
+
+**Cómo arrancar HU-F18 Día 9 tras merge HU-F16+F21:**
+
+1. Pre-requisito: HU-F16+F21 mergeada en `main` (los hooks `useBalance` + `usePortfolioPositions` + el `MarketDataOrchestrator` ya existen — F18 los va a reusar masivamente).
+2. SDD Paso 1: crear `specs/HU-F18-dashboard/SPEC.md`. **No bundle**: F18 es solo 1 HU y abarca su propia complejidad (charts, widgets, posiblemente WebSocket si se decide live updates). Cuestionario antes de SPEC (3-4 preguntas críticas): (a) widgets a incluir (saldo + P&L total + top 3 ganadores + top 3 perdedores + curva equity?), (b) refresh strategy (manual + on-focus como F16, o polling intervalado, o WebSocket), (c) librería de charts (recharts vs chart.js vs visx — verificar STACK.md), (d) responsive mobile (tabs o stack?).
+3. **Reuso máximo de F16+F21**: el `MarketDataOrchestrator` ya está cableado, fan-out paralelo con cap 1.5s. F18 puede pedir precios de tickers de interés del usuario (no solo los que tiene en posición) reusando exactamente el mismo patrón. Si se quiere cache (deuda #19 nueva), agregar Redis ahí.
+4. **HU-F17 historial de operaciones** podría incluirse como bundle con F18 si comparten página (`/dashboard` con widget de "últimas órdenes"). Discutir con humano al arrancar Día 9.
+5. **Deuda emergente para limpiar en F18**: borrar `InvalidSideException.sideNotYetImplemented()` dead code (#16 deuda viva), extender `useTickerOptions` para filter por posiciones cuando side=SELL (#15).
+
+**Estado anterior HU-F10 (cerrado y mergeado 2026-05-24 PR #7):**
+
+- 6 bundles mergeados en `main`: HU-F01 (PR #2), HU-F02+F03 (PR #3), HU-F04+F20 (PR #4), HU-F06 (PR #5), HU-F09 (PR #6), **HU-F10 (PR #7, merge commit `e5a8943`)**.
+- HU-F10 cerró con 250 tests verdes; ahora HU-F16+F21 sumó +36 → 286 totales.
+- Las 21 decisiones D1–D21 de F10 están documentadas en `specs/HU-F10-orden-venta-market/plan.md` para referencia futura.
+
+---
+
+## Cómo continuar (post HU-F10 → HU-F16+F21 Día 8) [HISTÓRICO — completado]
+
+**Estado al cierre HU-F10 (2026-05-24):**
 
 - HU-F10 implementación completa en branch `feat/HU-F10-orden-venta-market`. **250 tests verdes (207 unit + 43 IT)**, 0 regresiones. Frontend `npm run build` verde.
 - HITOs 1–4 ✅ (backend + tests IT). HITO 5 ⏸️ smoke E2E humano (requiere mercado abierto). HITO 6 ⏸️ commit + push + PR firmado por humano.

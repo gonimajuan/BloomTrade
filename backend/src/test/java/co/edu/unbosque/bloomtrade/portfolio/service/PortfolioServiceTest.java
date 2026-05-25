@@ -7,12 +7,18 @@ import co.edu.unbosque.bloomtrade.auth.domain.DocumentType;
 import co.edu.unbosque.bloomtrade.auth.domain.User;
 import co.edu.unbosque.bloomtrade.auth.repository.UserRepository;
 import co.edu.unbosque.bloomtrade.portfolio.domain.Position;
+import co.edu.unbosque.bloomtrade.portfolio.domain.UserBalance;
 import co.edu.unbosque.bloomtrade.portfolio.exception.InsufficientFundsException;
 import co.edu.unbosque.bloomtrade.portfolio.repository.PositionRepository;
+import co.edu.unbosque.bloomtrade.trading.domain.Order;
+import co.edu.unbosque.bloomtrade.trading.domain.OrderSide;
+import co.edu.unbosque.bloomtrade.trading.domain.OrderType;
 import co.edu.unbosque.bloomtrade.trading.exception.InsufficientSharesException;
 import co.edu.unbosque.bloomtrade.trading.exception.ShortSellingNotAllowedException;
+import co.edu.unbosque.bloomtrade.trading.repository.OrderRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +48,7 @@ class PortfolioServiceTest {
     @Autowired private PortfolioService portfolioService;
     @Autowired private UserRepository userRepository;
     @Autowired private PositionRepository positionRepository;
+    @Autowired private OrderRepository orderRepository;
     @Autowired private BalanceInitializer balanceInitializer;
     @Autowired private JdbcTemplate jdbcTemplate;
 
@@ -308,5 +315,127 @@ class PortfolioServiceTest {
     @Test
     void findPosition_missing_returnsEmpty() {
         assertThat(portfolioService.findPosition(userId, "NFLX")).isEmpty();
+    }
+
+    // ============================================================================
+    // HU-F16 Lote A — getPositions filtro defensivo qty>0 (T1.12, D12)
+    // ============================================================================
+
+    @Test
+    void getPositions_excludesZeroQuantityPositions() {
+        // Posición normal qty=5 via service (flujo legítimo).
+        portfolioService.upsertPosition(userId, "AAPL", 5, new BigDecimal("184.6200"));
+        // Posición qty=0 forzada via JDBC bypaseando validadores del entity — simula bug futuro.
+        jdbcTemplate.update(
+                "INSERT INTO app.positions (id, user_id, ticker, quantity, avg_buy_price)"
+                        + " VALUES (?, ?, 'TSLA', 0, 200.00)",
+                UUID.randomUUID(),
+                userId);
+
+        List<Position> positions = portfolioService.getPositions(userId);
+
+        assertThat(positions)
+                .hasSize(1)
+                .extracting(Position::getTicker)
+                .containsExactly("AAPL");
+    }
+
+    // ============================================================================
+    // HU-F16 Lote A — getPendingOrders (T1.13, D4)
+    // ============================================================================
+
+    @Test
+    void getPendingOrders_returnsEmptyListWhenNoOrders() {
+        assertThat(portfolioService.getPendingOrders(userId)).isEmpty();
+    }
+
+    @Test
+    void getPendingOrders_returnsOnlyPendingWithAlpacaOrderId() {
+        // 2 órdenes PENDING ambas con alpacaOrderId → ambas deben aparecer.
+        Order o1 = persistPendingOrderLinkedToAlpaca("AAPL", OrderSide.BUY, 5);
+        Order o2 = persistPendingOrderLinkedToAlpaca("MSFT", OrderSide.SELL, 3);
+
+        List<Order> pending = portfolioService.getPendingOrders(userId);
+
+        assertThat(pending).hasSize(2);
+        // Verifica orden DESC por submittedAt (la última creada primero).
+        assertThat(pending).extracting(Order::getId).containsExactlyInAnyOrder(o1.getId(), o2.getId());
+    }
+
+    @Test
+    void getPendingOrders_excludesExecutedOrders() {
+        // Orden EXECUTED no debe aparecer en pendingOrders aunque tenga alpacaOrderId.
+        Order pending = persistPendingOrderLinkedToAlpaca("AAPL", OrderSide.BUY, 5);
+        Order executed = persistPendingOrderLinkedToAlpaca("MSFT", OrderSide.BUY, 3);
+        executed.markAsExecuted("alpaca-exec-" + UUID.randomUUID(), new BigDecimal("420.0000"));
+        orderRepository.save(executed);
+
+        List<Order> result = portfolioService.getPendingOrders(userId);
+
+        assertThat(result).hasSize(1).extracting(Order::getId).containsExactly(pending.getId());
+    }
+
+    @Test
+    void getPendingOrders_excludesPendingWithoutAlpacaOrderId() {
+        // PENDING sin alpacaOrderId (estado intermedio pre-Alpaca submit) NO se expone.
+        Order pendingNoAlpaca =
+                Order.newPending(
+                        userId,
+                        UUID.randomUUID(),
+                        "AAPL",
+                        OrderSide.BUY,
+                        OrderType.MARKET,
+                        5,
+                        new BigDecimal("100.0000"),
+                        new BigDecimal("10.0000"),
+                        new BigDecimal("510.0000"));
+        orderRepository.save(pendingNoAlpaca);
+
+        assertThat(portfolioService.getPendingOrders(userId)).isEmpty();
+    }
+
+    // ============================================================================
+    // HU-F16 Lote A — getBalanceEntity (T1.14)
+    // ============================================================================
+
+    @Test
+    void getBalanceEntity_returnsEntityWhenExists() {
+        UserBalance balance = portfolioService.getBalanceEntity(userId);
+
+        assertThat(balance).isNotNull();
+        assertThat(balance.getUserId()).isEqualTo(userId);
+        assertThat(balance.getBalance()).isEqualByComparingTo("10000.00");
+        assertThat(balance.getCurrency()).isEqualTo("USD");
+        assertThat(balance.getUpdatedAt()).isNotNull();
+        assertThat(balance.getCreatedAt()).isNotNull();
+    }
+
+    @Test
+    void getBalanceEntity_throwsIllegalStateExceptionWhenNotFound() {
+        UUID strangerId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> portfolioService.getBalanceEntity(strangerId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(strangerId.toString());
+    }
+
+    /**
+     * Helper para tests F16: crea una {@link Order} en estado {@code PENDING + alpacaOrderId},
+     * que es el estado que {@code getPendingOrders} expone (órdenes encoladas en Alpaca).
+     */
+    private Order persistPendingOrderLinkedToAlpaca(String ticker, OrderSide side, int quantity) {
+        Order order =
+                Order.newPending(
+                        userId,
+                        UUID.randomUUID(),
+                        ticker,
+                        side,
+                        OrderType.MARKET,
+                        quantity,
+                        new BigDecimal("100.0000"),
+                        new BigDecimal("10.0000"),
+                        new BigDecimal("1010.0000"));
+        order.linkToAlpaca("alpaca-pending-" + UUID.randomUUID());
+        return orderRepository.save(order);
     }
 }

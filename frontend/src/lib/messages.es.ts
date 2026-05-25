@@ -84,3 +84,23 @@ const MESSAGES: Record<string, string> = {
 export function humanFor(code: string): string {
   return MESSAGES[code] ?? code;
 }
+
+// ─── HU-F16 + HU-F21 (portafolio y saldo) ──────────────────────────────────
+// Copys de UI agrupados por feature. Las claves se consumen como literales
+// (no por código de error), por eso van en su propio objeto y NO en MESSAGES.
+
+export const portfolioMessages = {
+  title: 'Mi portafolio',
+  balanceTitle: 'Saldo disponible',
+  emptyState:
+    'Aún no tienes posiciones. Cuando realices tu primera compra, aparecerán aquí.',
+  emptyCta: 'Realizar primera compra',
+  marketDataDown:
+    'Precios de mercado temporalmente no disponibles. Mostramos cantidad y costo promedio.',
+  marketDataPartial:
+    'Algunos precios no se pudieron obtener. Las posiciones afectadas aparecen con "—".',
+  pendingSection: 'Órdenes en cola ({n})',
+  pendingBadge: 'Esperando apertura de mercado',
+  pnlTooltip: 'Pérdida o ganancia no realizada vs. costo promedio de compra',
+  refreshAria: 'Actualizar saldo y posiciones',
+};

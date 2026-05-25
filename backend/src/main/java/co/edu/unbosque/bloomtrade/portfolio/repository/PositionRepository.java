@@ -53,4 +53,17 @@ public interface PositionRepository extends JpaRepository<Position, UUID> {
     int deleteByUserIdAndTicker(@Param("userId") UUID userId, @Param("ticker") String ticker);
 
     List<Position> findByUserId(UUID userId);
+
+    /**
+     * HU-F16 D12 — filtro defensivo {@code quantity > 0}. HU-F10 D1 borra la fila al llegar a
+     * {@code quantity = 0}, pero si por un bug futuro o un INSERT manual sobreviviera una fila
+     * en ese estado, el listado del portafolio NO debe incluirla (sería confuso mostrar "0
+     * AAPL"). El método {@link #findByUserId} se preserva sin filtro para los usos internos
+     * que ya existen (test legacy).
+     *
+     * <p>D18 emergente Lote C: orden alfabético estable por ticker — necesario para tests
+     * deterministas (JsonPath con filtros no se evalúa consistente en MockMvc) y buena UX
+     * default (el frontend puede re-sortear si quiere).
+     */
+    List<Position> findByUserIdAndQuantityGreaterThanOrderByTicker(UUID userId, Integer minQuantity);
 }

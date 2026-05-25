@@ -47,6 +47,12 @@ export function AppHeader() {
         >
           Operar
         </Link>
+        <Link
+          to="/portfolio"
+          className="text-slate-300 underline-offset-4 hover:text-white hover:underline"
+        >
+          Portafolio
+        </Link>
         <button
           type="button"
           onClick={onLogout}
