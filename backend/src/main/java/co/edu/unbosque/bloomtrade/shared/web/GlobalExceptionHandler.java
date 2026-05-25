@@ -46,6 +46,7 @@ import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  * Manejador global de excepciones (spec HU-F01 §6, STACK.md §9.3). Es el <strong>único</strong>
@@ -540,6 +541,30 @@ public class GlobalExceptionHandler {
                                 ValidationMessages.humanFor(code),
                                 request.getRequestURI(),
                                 TraceIdFilter.currentTraceId()));
+    }
+
+    /**
+     * HU-F17 plan D22 — query param que no parsea al tipo esperado (ej. {@code ?side=FOO}
+     * para enum {@code OrderSide}). Spring lanza esta excepción antes de llegar al controller.
+     * Mapeamos a 400 {@code INVALID_REQUEST_PARAMETER} con field name = nombre del parámetro.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleQueryParamTypeMismatch(
+            MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        String code = "INVALID_REQUEST_PARAMETER";
+        return ResponseEntity.badRequest()
+                .body(
+                        ErrorResponse.validation(
+                                400,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId(),
+                                List.of(
+                                        new FieldErrorItem(
+                                                ex.getName(),
+                                                code,
+                                                ValidationMessages.humanFor(code)))));
     }
 
     @ExceptionHandler(Exception.class)

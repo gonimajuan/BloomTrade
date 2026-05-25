@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 /**
  * Acceso a {@code app.orders}.
@@ -22,7 +23,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
  *       exponen al cliente).</li>
  * </ul>
  */
-public interface OrderRepository extends JpaRepository<Order, UUID> {
+public interface OrderRepository
+        extends JpaRepository<Order, UUID>, JpaSpecificationExecutor<Order> {
 
     Optional<Order> findByClientOrderId(UUID clientOrderId);
 
@@ -30,4 +32,7 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     List<Order> findByUserIdAndStatusAndAlpacaOrderIdIsNotNullOrderBySubmittedAtDesc(
             UUID userId, OrderStatus status);
+
+    // HU-F17 extiende JpaSpecificationExecutor para soporte de filtros dinámicos
+    // (ticker, side) + paginación nativa Spring Data via OrderSpecifications.
 }

@@ -1,5 +1,6 @@
 package co.edu.unbosque.bloomtrade.portfolio.service;
 
+import co.edu.unbosque.bloomtrade.dashboard.dto.AccountEquityDto;
 import co.edu.unbosque.bloomtrade.portfolio.domain.Position;
 import co.edu.unbosque.bloomtrade.portfolio.domain.UserBalance;
 import co.edu.unbosque.bloomtrade.portfolio.exception.InsufficientFundsException;
@@ -11,6 +12,7 @@ import co.edu.unbosque.bloomtrade.trading.exception.InsufficientSharesException;
 import co.edu.unbosque.bloomtrade.trading.exception.ShortSellingNotAllowedException;
 import co.edu.unbosque.bloomtrade.trading.repository.OrderRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -350,5 +352,92 @@ public class PortfolioService {
     @Transactional(readOnly = true)
     public Optional<Position> findPosition(UUID userId, String ticker) {
         return positionRepository.findByUserIdAndTicker(userId, ticker);
+    }
+
+    /**
+     * HU-F18 plan D9 — calcula el equity total del usuario y P&L no realizado vs cost basis.
+     *
+     * <p>Equity = {@code balance + Σ(qty × currentPrice)} sobre todas las posiciones con qty>0.
+     * Cost basis total = {@code Σ(qty × avgBuyPrice)} (NO se descuentan comisiones; consistente
+     * con HU-F16 D11). P&L no realizado = {@code marketValue − costBasis} (signed). Porcentaje
+     * = {@code (pnl / costBasis) × 100}, scale=2 HALF_UP.
+     *
+     * <p>Semántica null (plan D-EQUITY-PARTIAL):
+     * <ul>
+     *   <li>Sin posiciones (qty&gt;0=∅): {@code marketValue="0.00"}, {@code equity=balance},
+     *       {@code costBasis="0.00"}, {@code pnl="0.00"}, {@code pct=null} (no se puede ratio).</li>
+     *   <li>Posiciones con precios completos: todos los campos calculados.</li>
+     *   <li>Posiciones con todos los prices null: {@code marketValue/equity/pnl/pct=null}.</li>
+     *   <li>Posiciones con prices parciales: {@code marketValue/pnl} reflejan solo las que tienen
+     *       precio (sum parcial); el cliente ve degradación coherente con
+     *       {@code marketDataAvailable="partial"} top-level.</li>
+     * </ul>
+     *
+     * @param userId usuario propietario.
+     * @param prices map ticker→precio (puede contener nulls para tickers cuyo fetch falló).
+     */
+    @Transactional(readOnly = true)
+    public AccountEquityDto getAccountEquity(UUID userId, java.util.Map<String, BigDecimal> prices) {
+        UserBalance balance = getBalanceEntity(userId);
+        String balanceStr = balance.getBalance().setScale(2, RoundingMode.HALF_UP).toPlainString();
+        String currency = balance.getCurrency();
+
+        List<Position> positions = getPositions(userId);
+        if (positions.isEmpty()) {
+            return new AccountEquityDto(
+                    balanceStr,
+                    "0.00",
+                    balanceStr,
+                    "0.00",
+                    "0.00",
+                    null,
+                    currency);
+        }
+
+        BigDecimal costBasisTotal = BigDecimal.ZERO;
+        BigDecimal marketValueTotal = BigDecimal.ZERO;
+        int pricedCount = 0;
+        for (Position p : positions) {
+            BigDecimal qty = BigDecimal.valueOf(p.getQuantity());
+            costBasisTotal = costBasisTotal.add(qty.multiply(p.getAvgBuyPrice()));
+            BigDecimal price = prices == null ? null : prices.get(p.getTicker());
+            if (price != null) {
+                marketValueTotal = marketValueTotal.add(qty.multiply(price));
+                pricedCount++;
+            }
+        }
+        costBasisTotal = costBasisTotal.setScale(2, RoundingMode.HALF_UP);
+
+        if (pricedCount == 0) {
+            // Sin ningún precio: marketValue/equity/pnl/pct todos null. CostBasis sí presente.
+            return new AccountEquityDto(
+                    balanceStr,
+                    null,
+                    null,
+                    costBasisTotal.toPlainString(),
+                    null,
+                    null,
+                    currency);
+        }
+        marketValueTotal = marketValueTotal.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal equity = balance.getBalance().add(marketValueTotal).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal pnl = marketValueTotal.subtract(costBasisTotal).setScale(2, RoundingMode.HALF_UP);
+        String pctStr;
+        if (costBasisTotal.signum() == 0) {
+            pctStr = null;
+        } else {
+            BigDecimal pct =
+                    pnl.multiply(BigDecimal.valueOf(100))
+                            .divide(costBasisTotal, 2, RoundingMode.HALF_UP);
+            pctStr = pct.toPlainString();
+        }
+        return new AccountEquityDto(
+                balanceStr,
+                marketValueTotal.toPlainString(),
+                equity.toPlainString(),
+                costBasisTotal.toPlainString(),
+                pnl.toPlainString(),
+                pctStr,
+                currency);
     }
 }

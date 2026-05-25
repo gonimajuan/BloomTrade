@@ -241,6 +241,80 @@ export interface PortfolioPositionsResponse {
   fetchedAt: string;
 }
 
+// ─── HU-F18 (dashboard de acciones) ────────────────────────────────────────
+
+export type Market = 'NYSE' | 'NASDAQ' | 'LSE' | 'TSE' | 'ASX';
+
+export interface TickerDashboardDto {
+  ticker: string;
+  /** Mid-price actual. null si Alpaca falló para este ticker. */
+  currentPrice: string | null;
+  /** Close de la primera barra intradía hoy. */
+  openPrice: string | null;
+  /** (current − open) / open × 100, scale=2. null si current u open están en null o open=0. */
+  dayChangePct: string | null;
+  /** Serie cronológica de closes intradía (15Min) como strings scale=2. Vacía si bars no disponibles. */
+  sparkline: string[];
+}
+
+export interface MarketGroupDto {
+  market: Market;
+  items: TickerDashboardDto[];
+}
+
+export interface AccountEquityDto {
+  /** Saldo USD disponible (siempre presente). */
+  balance: string;
+  /** Σ(qty × currentPrice). null si Alpaca falló para todas las posiciones del usuario. */
+  positionsMarketValue: string | null;
+  /** balance + positionsMarketValue. null si positionsMarketValue es null. */
+  equity: string | null;
+  /** Σ(qty × avgBuyPrice). null si no hay posiciones (sin posiciones → "0.00"). */
+  costBasisTotal: string | null;
+  /** Con signo. null si market value es null. */
+  unrealizedPnL: string | null;
+  /** (pnl / costBasis) × 100. null si costBasis=0 o pnl null. */
+  unrealizedPnLPct: string | null;
+  currency: 'USD';
+}
+
+export interface DashboardSnapshotResponse {
+  tickers: MarketGroupDto[];
+  equity: AccountEquityDto;
+  marketDataAvailable: MarketDataAvailability;
+  fetchedAt: string;
+}
+
+// ─── HU-F17 (historial de órdenes) ─────────────────────────────────────────
+
+export interface OrderHistoryDto {
+  orderId: string;
+  clientOrderId: string;
+  ticker: string;
+  side: OrderSide;
+  quantity: number;
+  status: OrderStatus;
+  submittedAt: string;
+  executedAt: string | null;
+  executionTotal: string | null;
+  averageFillPrice: string | null;
+  commission: string | null;
+  alpacaOrderId: string | null;
+  failureReason: string | null;
+}
+
+export interface PaginationDto {
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+export interface OrderHistoryResponse {
+  content: OrderHistoryDto[];
+  pagination: PaginationDto;
+}
+
 // ─── Errores estándar ───────────────────────────────────────────────────────
 
 export interface FieldErrorItem {

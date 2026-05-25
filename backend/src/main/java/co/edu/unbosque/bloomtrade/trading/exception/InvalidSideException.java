@@ -1,14 +1,13 @@
 package co.edu.unbosque.bloomtrade.trading.exception;
 
 /**
- * Side inválido en una orden (HU-F09 §5.3.3). Dos casos:
- * <ul>
- *   <li>{@link #sideNotYetImplemented} — {@code side=SELL} mientras HU-F10 no se haya implementado
- *       (Día 7 ROADMAP). El endpoint lo acepta pero el handler responde 400
- *       {@code SIDE_NOT_YET_IMPLEMENTED}.</li>
- *   <li>{@link #invalidSide} — valor en general fuera del enum {@link
- *       co.edu.unbosque.bloomtrade.trading.domain.OrderSide}. Bean Validation suele atajarlo.</li>
- * </ul>
+ * Side inválido en una orden (HU-F09 §5.3.3). Valor fuera del enum
+ * {@link co.edu.unbosque.bloomtrade.trading.domain.OrderSide}. Bean Validation suele atajarlo
+ * antes; este caminito es defensa en profundidad.
+ *
+ * <p>HU-F18 Lote E (cleanup deuda viva #16): eliminada la factory {@code sideNotYetImplemented()}
+ * que existía como temporary durante HU-F09 hasta que HU-F10 habilitara SELL. Con HU-F10
+ * mergeada en PR #7, el path quedó inalcanzable (dead code confirmado por grep).
  */
 public class InvalidSideException extends RuntimeException {
 
@@ -17,11 +16,6 @@ public class InvalidSideException extends RuntimeException {
     private InvalidSideException(String message, String errorCode) {
         super(message);
         this.errorCode = errorCode;
-    }
-
-    public static InvalidSideException sideNotYetImplemented() {
-        return new InvalidSideException(
-                "La venta (SELL) estará disponible en HU-F10", "SIDE_NOT_YET_IMPLEMENTED");
     }
 
     public static InvalidSideException invalidSide(String received) {

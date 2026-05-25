@@ -30,6 +30,12 @@ export function AppHeader() {
           </span>
         )}
         <Link
+          to="/dashboard"
+          className="text-slate-300 underline-offset-4 hover:text-white hover:underline"
+        >
+          Dashboard
+        </Link>
+        <Link
           to="/profile"
           className="text-slate-300 underline-offset-4 hover:text-white hover:underline"
         >
