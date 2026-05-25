@@ -9,6 +9,7 @@ import { PremiumPage } from './pages/PremiumPage';
 import { PremiumSuccessPage } from './pages/PremiumSuccessPage';
 import { PremiumCancelPage } from './pages/PremiumCancelPage';
 import { TradePage } from './pages/TradePage';
+import { PortfolioPage } from './pages/PortfolioPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { useAuth } from './features/auth/context/AuthContext';
 
@@ -69,6 +70,14 @@ function App() {
         element={
           <ProtectedRoute>
             <TradePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/portfolio"
+        element={
+          <ProtectedRoute>
+            <PortfolioPage />
           </ProtectedRoute>
         }
       />

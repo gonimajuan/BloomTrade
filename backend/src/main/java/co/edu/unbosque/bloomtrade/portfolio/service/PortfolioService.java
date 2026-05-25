@@ -5,8 +5,11 @@ import co.edu.unbosque.bloomtrade.portfolio.domain.UserBalance;
 import co.edu.unbosque.bloomtrade.portfolio.exception.InsufficientFundsException;
 import co.edu.unbosque.bloomtrade.portfolio.repository.PositionRepository;
 import co.edu.unbosque.bloomtrade.portfolio.repository.UserBalanceRepository;
+import co.edu.unbosque.bloomtrade.trading.domain.Order;
+import co.edu.unbosque.bloomtrade.trading.domain.OrderStatus;
 import co.edu.unbosque.bloomtrade.trading.exception.InsufficientSharesException;
 import co.edu.unbosque.bloomtrade.trading.exception.ShortSellingNotAllowedException;
+import co.edu.unbosque.bloomtrade.trading.repository.OrderRepository;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -55,11 +58,15 @@ public class PortfolioService {
 
     private final UserBalanceRepository userBalanceRepository;
     private final PositionRepository positionRepository;
+    private final OrderRepository orderRepository;
 
     public PortfolioService(
-            UserBalanceRepository userBalanceRepository, PositionRepository positionRepository) {
+            UserBalanceRepository userBalanceRepository,
+            PositionRepository positionRepository,
+            OrderRepository orderRepository) {
         this.userBalanceRepository = userBalanceRepository;
         this.positionRepository = positionRepository;
+        this.orderRepository = orderRepository;
     }
 
     /**
@@ -294,9 +301,49 @@ public class PortfolioService {
                                         "Balance no encontrado para userId=" + userId));
     }
 
+    /**
+     * Devuelve la entidad {@link UserBalance} completa para acceder a {@code updatedAt} y
+     * {@code currency}. Usar {@link #getBalance(UUID)} si solo se necesita el monto.
+     *
+     * <p>HU-F21 — alimenta el {@code BalanceResponse} de
+     * {@code GET /api/v1/portfolio/balance} con su {@code lastUpdatedAt}.
+     *
+     * @throws IllegalStateException si no existe fila para el {@code userId} (no debería
+     *     ocurrir — {@code BalanceInitializer} la crea en HU-F01).
+     */
+    @Transactional(readOnly = true)
+    public UserBalance getBalanceEntity(UUID userId) {
+        return userBalanceRepository
+                .findById(userId)
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "Balance no encontrado para userId=" + userId));
+    }
+
+    /**
+     * HU-F16 D12 — filtro defensivo {@code quantity > 0}. Si por un bug futuro sobreviviera una
+     * fila con {@code quantity = 0} (HU-F10 D1 borra la fila al llegar a 0), el listado del
+     * portafolio NO la incluye.
+     */
     @Transactional(readOnly = true)
     public List<Position> getPositions(UUID userId) {
-        return positionRepository.findByUserId(userId);
+        return positionRepository.findByUserIdAndQuantityGreaterThanOrderByTicker(userId, 0);
+    }
+
+    /**
+     * HU-F16 D4 — devuelve órdenes encoladas en Alpaca para la sección {@code pendingOrders[]}
+     * de {@code GET /api/v1/portfolio/positions}. Solo {@code PENDING + alpaca_order_id NOT NULL}
+     * (órdenes en estado intermedio antes del submit a Alpaca NO se exponen).
+     *
+     * <p>Mitigación de la deuda viva #8/#12 del AGENTS.md handoff: visibilidad UX de órdenes
+     * cuyo efecto en BD (saldo debitado en BUY queued, posición decrementada en SELL queued)
+     * aún no se reconcilió con un fill real de Alpaca.
+     */
+    @Transactional(readOnly = true)
+    public List<Order> getPendingOrders(UUID userId) {
+        return orderRepository.findByUserIdAndStatusAndAlpacaOrderIdIsNotNullOrderBySubmittedAtDesc(
+                userId, OrderStatus.PENDING);
     }
 
     /** Lookup readOnly de la posición para el quote SELL (HU-F10 D15: sin lock pessimistic). */
