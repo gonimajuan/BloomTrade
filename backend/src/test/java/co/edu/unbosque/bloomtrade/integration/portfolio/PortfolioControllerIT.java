@@ -272,13 +272,13 @@ class PortfolioControllerIT {
     }
 
     @Test
-    void getPositions_withoutJwt_returns403() throws Exception {
-        // Plan §2.4 D17: el JwtAuthenticationFilter solo escribe 401 cuando hay token y es
-        // inválido/expirado. Sin Authorization header, Spring Security 6 responde 403 por
-        // default (no hay AuthenticationEntryPoint customizado). El SPEC §6.4 declara 401 —
-        // divergencia cross-cutting fuera del scope de F16+F21. Mini-HU
-        // `HU-F0X-token-rotation-logout` la corregirá globalmente.
-        mockMvc.perform(get("/api/v1/portfolio/positions")).andExpect(status().isForbidden());
+    void getPositions_withoutJwt_returns401() throws Exception {
+        // Deuda D17 F16+F21 CERRADA por mini-HU HU-F0X-token-rotation-logout: ahora
+        // JwtAuthenticationEntryPoint emite 401 AUTH_REQUIRED cuando no hay header (antes 403
+        // default de Spring Security 6). Cumple SPEC §6.4.
+        mockMvc.perform(get("/api/v1/portfolio/positions"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("AUTH_REQUIRED"));
     }
 
     // ─── tests HU-F21 /balance ──────────────────────────────────────────────────
@@ -304,9 +304,11 @@ class PortfolioControllerIT {
     }
 
     @Test
-    void getBalance_withoutJwt_returns403() throws Exception {
-        // Plan §2.4 D17 — ver comentario en getPositions_withoutJwt_returns403.
-        mockMvc.perform(get("/api/v1/portfolio/balance")).andExpect(status().isForbidden());
+    void getBalance_withoutJwt_returns401() throws Exception {
+        // Deuda D17 F16+F21 CERRADA — ver comentario en getPositions_withoutJwt_returns401.
+        mockMvc.perform(get("/api/v1/portfolio/balance"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("AUTH_REQUIRED"));
     }
 
     // ─── Lote E — tests adicionales ────────────────────────────────────────────

@@ -107,8 +107,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     configureAuthInterceptor({
       getAccessToken: () => accessToken,
       onUnauthorized: () => {
+        // Pasamos state.reason='session_expired' SOLO si el usuario tenía sesión activa: así
+        // /login muestra el banner "tu sesión expiró" únicamente en kickout, no en el primer
+        // ingreso anónimo a una ruta protegida (caso AUTH_REQUIRED puro).
+        const hadActiveSession = accessToken !== null;
         clearSession();
-        navigate('/login', { replace: true });
+        navigate('/login', {
+          replace: true,
+          state: hadActiveSession ? { reason: 'session_expired' } : undefined,
+        });
       },
     });
   }, [accessToken, clearSession, navigate]);

@@ -6,6 +6,7 @@ import { ResendButton } from '@/features/auth/components/ResendButton';
 import { useMFAVerify } from '@/features/auth/hooks/useMFAVerify';
 import { useAuth } from '@/features/auth/context/AuthContext';
 import { mfaSchema } from '@/features/auth/schemas/mfa';
+import type { ParsedError } from '@/lib/errorParser';
 import { humanFor } from '@/lib/messages.es';
 import type { MfaResendResponse } from '@/types/api';
 
@@ -40,6 +41,7 @@ export function MFAVerifyPage() {
   const [code, setCode] = useState('');
   const [expiresAt, setExpiresAt] = useState<Date | null>(initialExpiresAt);
   const [expired, setExpired] = useState(false);
+  const [resendError, setResendError] = useState<ParsedError | null>(null);
 
   useEffect(() => {
     if (!verify.isSuccess || !verify.data) return;
@@ -70,8 +72,16 @@ export function MFAVerifyPage() {
     setExpiresAt(new Date(Date.now() + response.expiresInSeconds * 1000));
     setExpired(false);
     setCode('');
+    setResendError(null);
     verify.reset();
   };
+
+  // ResendButton ya muestra "Alcanzaste el máximo…" permanente dentro de sí mismo cuando llega
+  // MAX_RESENDS_EXCEEDED; no duplicamos ese caso con un banner aparte.
+  const showResendBanner =
+    resendError !== null && resendError.code !== 'MAX_RESENDS_EXCEEDED';
+  const resendBannerTone =
+    resendError?.code === 'RESEND_COOLDOWN_ACTIVE' ? 'amber' : 'red';
 
   const errorCode = verify.error?.code;
   const showInvalid = errorCode === 'MFA_INVALID_CODE';
@@ -110,6 +120,7 @@ export function MFAVerifyPage() {
             <ResendButton
               tempSessionId={tempSessionId}
               onResendSuccess={onResendSuccess}
+              onResendError={setResendError}
             />
           </div>
 
@@ -121,6 +132,18 @@ export function MFAVerifyPage() {
           {expired && !verify.error && (
             <p role="alert" className="text-sm text-amber-300">
               El código expiró. Solicitá uno nuevo.
+            </p>
+          )}
+          {showResendBanner && resendError && (
+            <p
+              role="alert"
+              className={
+                resendBannerTone === 'amber'
+                  ? 'text-sm text-amber-300'
+                  : 'text-sm text-red-400'
+              }
+            >
+              {resendError.message}
             </p>
           )}
           {showSessionInvalid && (

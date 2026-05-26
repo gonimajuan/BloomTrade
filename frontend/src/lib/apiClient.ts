@@ -24,7 +24,16 @@ export const apiClient = axios.create({
   timeout: 10_000,
 });
 
-const TOKEN_ERROR_CODES = new Set(['TOKEN_EXPIRED', 'TOKEN_INVALID', 'TOKEN_REVOKED']);
+// AUTH_REQUIRED se agrega tras cerrar la mini-HU HU-F0X-token-rotation-logout: el backend
+// ahora emite 401 AUTH_REQUIRED cuando llega un request anónimo a un endpoint protegido
+// (antes era 403 default de Spring Security 6). Tratarlo igual que un token inválido para
+// que el interceptor limpie sesión y redirija a /login.
+const TOKEN_ERROR_CODES = new Set([
+  'TOKEN_EXPIRED',
+  'TOKEN_INVALID',
+  'TOKEN_REVOKED',
+  'AUTH_REQUIRED',
+]);
 
 let accessTokenGetter: () => string | null = () => null;
 let unauthorizedHandler: () => void = () => {};

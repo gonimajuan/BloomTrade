@@ -1,7 +1,6 @@
-import { format, parseISO } from 'date-fns';
-import { es } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 import { useOrdersRecent } from '@/features/dashboard/hooks/useOrdersRecent';
+import { formatLocalDateTime } from '@/lib/dateFormat';
 import { dashboardMessages } from '@/lib/messages.es';
 import type { OrderHistoryDto, OrderStatus } from '@/types/api';
 
@@ -29,7 +28,11 @@ export function RecentOrdersWidget() {
   if (error) {
     return (
       <section className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-        No se pudieron cargar las órdenes: {error.message}
+        <p>No se pudieron cargar las órdenes: {error.message}</p>
+        <p className="mt-1 text-xs italic text-rose-700">
+          Código: {error.code}
+          {error.traceId && ` · traceId: ${error.traceId}`}
+        </p>
       </section>
     );
   }
@@ -112,7 +115,7 @@ function OrdersTable({ orders }: { orders: OrderHistoryDto[] }) {
               </span>
             </td>
             <td className="py-2 text-right text-xs text-slate-500">
-              {format(parseISO(order.submittedAt), 'dd-MMM-yyyy HH:mm', { locale: es })}
+              {formatLocalDateTime(order.submittedAt)}
             </td>
           </tr>
         ))}

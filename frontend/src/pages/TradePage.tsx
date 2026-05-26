@@ -91,7 +91,7 @@ export function TradePage() {
               onConfirm={handleConfirm}
               onCancel={handleCancelQuote}
               isSubmitting={submitMutation.isPending}
-              submitError={submitMutation.error?.message ?? null}
+              submitError={submitMutation.error ?? null}
             />
           ) : (
             <aside className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
