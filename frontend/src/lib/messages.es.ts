@@ -40,6 +40,7 @@ const MESSAGES: Record<string, string> = {
     'Has alcanzado el máximo de reenvíos. Por favor inicia sesión de nuevo.',
   TOKEN_EXPIRED: 'Tu sesión expiró. Inicia sesión de nuevo.',
   TOKEN_INVALID: 'Tu sesión no es válida. Inicia sesión de nuevo.',
+  AUTH_REQUIRED: 'Necesitas iniciar sesión para acceder.',
 
   // ── HU-F04 + HU-F20 (perfil + canal de notificación) ────────────────────
   READ_ONLY_FIELD_MODIFIED: 'Ese campo no puede ser modificado desde el perfil.',

@@ -5,6 +5,12 @@ import type { PositionDto } from '@/types/api';
 
 interface Props {
   positions: PositionDto[];
+  /**
+   * Indica que hay un refetch en curso mientras seguimos mostrando data previa.
+   * P1-2 audit: en lugar de un spinner que oculta la tabla, dim a 60% opacity para
+   * señalar que la data puede estar stale sin perder visibilidad.
+   */
+  isFetching?: boolean;
 }
 
 const currencyFormatter = new Intl.NumberFormat('es-CO', {
@@ -43,7 +49,7 @@ function PnLCell({ pnl, pnlPct }: { pnl: string | null; pnlPct: string | null })
  * Tabla de posiciones con P&L color-coded e icono ▲/▼ (a11y daltonismo).
  * SPEC §12.1 + plan D7. Empty state inline con CTA a /trade.
  */
-export function PositionsTable({ positions }: Props) {
+export function PositionsTable({ positions, isFetching = false }: Props) {
   if (positions.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center">
@@ -59,7 +65,12 @@ export function PositionsTable({ positions }: Props) {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div
+      aria-busy={isFetching}
+      className={`overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-opacity ${
+        isFetching ? 'opacity-60' : ''
+      }`}
+    >
       <table className="w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr>

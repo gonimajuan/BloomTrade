@@ -1,3 +1,5 @@
+import { formatLocalDateTimeWithSeconds } from '@/lib/dateFormat';
+import type { ParsedError } from '@/lib/errorParser';
 import type { QuoteResponse } from '@/types/api';
 
 const fmt = new Intl.NumberFormat('en-US', {
@@ -33,8 +35,12 @@ interface Props {
   onConfirm: () => void;
   onCancel: () => void;
   isSubmitting: boolean;
-  /** Error de la última submisión (si la hubo), mostrado como banner inline. */
-  submitError?: string | null;
+  /**
+   * Error de la última submisión (si la hubo), mostrado como banner inline. P1-1 audit:
+   * pasamos el {@link ParsedError} completo para incluir el {@code code} (útil para soporte
+   * y debugging) además del mensaje humano.
+   */
+  submitError?: ParsedError | null;
 }
 
 /**
@@ -112,7 +118,11 @@ export function OrderQuotePanel({
           role="alert"
           className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700"
         >
-          {submitError}
+          <p>{submitError.message}</p>
+          <p className="mt-1 text-xs italic text-red-600">
+            Código: {submitError.code}
+            {submitError.traceId && ` · traceId: ${submitError.traceId}`}
+          </p>
         </div>
       )}
 
@@ -206,8 +216,8 @@ export function OrderQuotePanel({
       </div>
 
       <p className="mt-3 text-xs text-slate-500">
-        Quote válido al {new Date(quote.quotedAt).toLocaleString()}. El precio de ejecución
-        puede variar ligeramente según el mercado.
+        Quote válido al {formatLocalDateTimeWithSeconds(quote.quotedAt)}. El precio de
+        ejecución puede variar ligeramente según el mercado.
       </p>
     </section>
   );

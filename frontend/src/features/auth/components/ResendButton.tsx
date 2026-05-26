@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useMFAResend } from '../hooks/useMFAResend';
+import type { ParsedError } from '@/lib/errorParser';
 import type { MfaResendResponse } from '@/types/api';
 
 interface ResendButtonProps {
   tempSessionId: string;
   /** Notifica al padre cuando un resend exitoso debe reiniciar el temporizador del OTP. */
   onResendSuccess?: (response: MfaResendResponse) => void;
+  /**
+   * Notifica al padre cuando el resend falla — incluido el cooldown 429. El padre puede
+   * renderizar un banner contextual ("Esperá Ns…", "Sesión expirada…") en su propia área de
+   * errores. El botón sigue manejando internamente el estado visual del cooldown/max-resends.
+   */
+  onResendError?: (error: ParsedError) => void;
 }
 
 const DEFAULT_COOLDOWN_SECONDS = 30;
@@ -25,7 +32,11 @@ const DEFAULT_COOLDOWN_SECONDS = 30;
  * {@code RESEND_COOLDOWN_ACTIVE}, o de la constante por defecto cuando el resend fue exitoso
  * (el cooldown del servidor es 30s — spec §9.3).
  */
-export function ResendButton({ tempSessionId, onResendSuccess }: ResendButtonProps) {
+export function ResendButton({
+  tempSessionId,
+  onResendSuccess,
+  onResendError,
+}: ResendButtonProps) {
   const mutation = useMFAResend();
   const [cooldown, setCooldown] = useState(0);
   const [maxed, setMaxed] = useState(false);
@@ -55,7 +66,8 @@ export function ResendButton({ tempSessionId, onResendSuccess }: ResendButtonPro
     } else if (mutation.error.code === 'MAX_RESENDS_EXCEEDED') {
       setMaxed(true);
     }
-  }, [mutation.error]);
+    onResendError?.(mutation.error);
+  }, [mutation.error, onResendError]);
 
   if (maxed) {
     return (

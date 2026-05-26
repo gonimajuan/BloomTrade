@@ -45,7 +45,11 @@ export function PortfolioPage() {
 
         {balanceQuery.error && (
           <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-            No se pudo cargar el saldo: {balanceQuery.error.message}
+            <p>No se pudo cargar el saldo: {balanceQuery.error.message}</p>
+            <p className="mt-1 text-xs italic text-rose-700">
+              Código: {balanceQuery.error.code}
+              {balanceQuery.error.traceId && ` · traceId: ${balanceQuery.error.traceId}`}
+            </p>
           </div>
         )}
 
@@ -55,13 +59,23 @@ export function PortfolioPage() {
           </div>
         ) : positionsQuery.error ? (
           <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-            No se pudieron cargar las posiciones: {positionsQuery.error.message}
+            <p>No se pudieron cargar las posiciones: {positionsQuery.error.message}</p>
+            <p className="mt-1 text-xs italic text-rose-700">
+              Código: {positionsQuery.error.code}
+              {positionsQuery.error.traceId && ` · traceId: ${positionsQuery.error.traceId}`}
+            </p>
           </div>
         ) : positionsQuery.data ? (
           <div className="space-y-4">
             <MarketDataBanner status={positionsQuery.data.marketDataAvailable} />
-            <PositionsTable positions={positionsQuery.data.positions} />
-            <PendingOrdersPanel orders={positionsQuery.data.pendingOrders} />
+            <PositionsTable
+              positions={positionsQuery.data.positions}
+              isFetching={positionsQuery.isFetching}
+            />
+            <PendingOrdersPanel
+              orders={positionsQuery.data.pendingOrders}
+              isFetching={positionsQuery.isFetching}
+            />
           </div>
         ) : null}
       </main>

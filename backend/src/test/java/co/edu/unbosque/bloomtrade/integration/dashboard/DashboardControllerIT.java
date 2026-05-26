@@ -302,13 +302,13 @@ class DashboardControllerIT {
     }
 
     @Test
-    void snapshot_withoutJwt_returns403_dueToCrossCuttingDeudaD17F16() throws Exception {
-        // T5.2: SPEC §11 AC-07 declara 401 pero el JwtAuthenticationFilter del proyecto
-        // solo emite 401 con token inválido/expirado; sin header Spring Security 6 cae en
-        // 403 por default (no hay AuthenticationEntryPoint custom). Mismo patrón que F16+F21
-        // PortfolioControllerIT D17 emergente. Fix real diferido a mini-HU token-rotation-logout.
+    void snapshot_withoutJwt_returns401() throws Exception {
+        // Deuda D-T5.2 F18 + D17 F16+F21 CERRADA por mini-HU HU-F0X-token-rotation-logout:
+        // JwtAuthenticationEntryPoint emite 401 AUTH_REQUIRED en vez del 403 default de
+        // Spring Security 6. Cumple SPEC §11 AC-07.
         mockMvc.perform(get("/api/v1/dashboard/snapshot"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("AUTH_REQUIRED"));
     }
 
     @Test

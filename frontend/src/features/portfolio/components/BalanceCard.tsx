@@ -1,6 +1,7 @@
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { RefreshCw } from 'lucide-react';
+import { formatLocalDateTime } from '@/lib/dateFormat';
 import { portfolioMessages } from '@/lib/messages.es';
 import type { BalanceResponse } from '@/types/api';
 
@@ -43,7 +44,10 @@ export function BalanceCard({ data, isLoading, isFetching, onRefresh }: Props) {
             <p className="mt-2 text-3xl font-semibold text-slate-400">—</p>
           )}
           {data && (
-            <p className="mt-1 text-xs text-slate-500">
+            <p
+              className="mt-1 text-xs text-slate-500"
+              title={`Última actualización: ${formatLocalDateTime(data.lastUpdatedAt)}`}
+            >
               Actualizado{' '}
               {formatDistanceToNow(new Date(data.lastUpdatedAt), {
                 addSuffix: true,

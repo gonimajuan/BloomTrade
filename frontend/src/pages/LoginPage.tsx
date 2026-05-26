@@ -1,13 +1,25 @@
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { LoginForm } from '@/features/auth/components/LoginForm';
 import { useAuth } from '@/features/auth/context/AuthContext';
 
 /**
  * Página /login (spec HU-F02 §12.1). Reemplaza el stub introducido en HU-F01 (Lote H T7.7).
  * Si el usuario ya está autenticado, redirige a /dashboard.
+ *
+ * <p>Cuando el usuario llega aquí por kickout de sesión (interceptor 401 en apiClient), el
+ * AuthContext pasa {@code state.reason='session_expired'} en el navigate; mostramos un banner
+ * persistente hasta que envíe el form. Cierre de la mini-HU HU-F0X-token-rotation-logout.
  */
+interface LoginLocationState {
+  reason?: 'session_expired';
+}
+
 export function LoginPage() {
   const { isAuthenticated } = useAuth();
+  const location = useLocation();
+  const state = location.state as LoginLocationState | null;
+  const sessionExpired = state?.reason === 'session_expired';
+
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -21,6 +33,14 @@ export function LoginPage() {
             Ingresá tus credenciales para acceder a BloomTrade.
           </p>
         </header>
+        {sessionExpired && (
+          <div
+            role="status"
+            className="mb-4 rounded-md border border-amber-700/40 bg-amber-900/30 px-4 py-3 text-sm text-amber-100"
+          >
+            Tu sesión expiró. Iniciá sesión de nuevo para continuar.
+          </div>
+        )}
         <LoginForm />
         <p className="mt-6 text-center text-sm text-slate-400">
           ¿No tenés cuenta?{' '}
