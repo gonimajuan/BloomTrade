@@ -97,6 +97,37 @@ public class Order {
     @Column(name = "executed_at")
     private Instant executedAt;
 
+    // ─── HU-F15 — Cancelación de órdenes (V6) ──────────────────────────────────
+
+    /**
+     * Cancel solicitado pero polling Alpaca dio timeout — la orden queda PENDING esperando que
+     * {@code OrderReconciliationService} v2 materialice la transición a CANCELED (SPEC §5.2.1).
+     * Coexiste con {@code status=PENDING}.
+     */
+    @Column(name = "cancel_requested_at")
+    private Instant cancelRequestedAt;
+
+    /** Timestamp local de la transición a {@code CANCELED}. NULL si {@code status != CANCELED}. */
+    @Column(name = "canceled_at")
+    private Instant canceledAt;
+
+    /**
+     * Timestamp local de la transición a {@code EXPIRED} (TIF day expirado sin fill, detectado
+     * vía reconcile lazy v2). NULL si {@code status != EXPIRED}.
+     */
+    @Column(name = "expired_at")
+    private Instant expiredAt;
+
+    /**
+     * D13 D-RESTORE-AVG-BUY-PRICE: snapshot del {@code avg_buy_price} de la posición al
+     * momento de SELL, capturado por {@code TradingService} pre-INSERT. Si la SELL queued se
+     * cancela y la posición fue liquidada por el decrement optimista (D-SELL-QUEUED-RISK F10),
+     * el re-INSERT a {@code app.positions} usa este valor para preservar el costo histórico.
+     * NULL para BUY (no aplica).
+     */
+    @Column(name = "avg_buy_price_at_submission", precision = 19, scale = 4)
+    private BigDecimal avgBuyPriceAtSubmission;
+
     private Order(
             UUID userId,
             UUID clientOrderId,
@@ -213,5 +244,74 @@ public class Order {
         this.status = OrderStatus.FAILED;
         this.errorCode = errorCode;
         this.errorMessage = errorMessage;
+    }
+
+    // ─── HU-F15 — Cancelación ────────────────────────────────────────────────
+
+    /**
+     * Marca {@code cancel_requested_at} sin cambiar status. Usado en el path polling-timeout
+     * (SPEC §5.2.1 D6): la cancelación fue solicitada y Alpaca aceptó el DELETE, pero el polling
+     * agotó el timeout antes de ver {@code status=canceled}. Reconcile lazy v2 materializará
+     * la transición final.
+     */
+    public void markCancelRequested() {
+        if (this.status != OrderStatus.PENDING) {
+            throw new IllegalStateException(
+                    "No se puede marcar cancel solicitado desde status " + this.status);
+        }
+        if (this.cancelRequestedAt != null) {
+            // Idempotencia §5.2.4: re-request preserva el timestamp original.
+            return;
+        }
+        this.cancelRequestedAt = Instant.now();
+    }
+
+    /**
+     * Transiciona a {@code CANCELED}. Invocado tanto en path polling-OK ({@code TradingService})
+     * como por reconcile lazy v2 ({@code OrderReconciliationService}) cuando Alpaca confirma
+     * la cancelación outbound. El refund/restore lo hace el caller, no esta entidad.
+     */
+    public void markAsCanceled() {
+        if (this.status != OrderStatus.PENDING) {
+            throw new IllegalStateException(
+                    "No se puede marcar como CANCELED desde status " + this.status);
+        }
+        this.status = OrderStatus.CANCELED;
+        this.canceledAt = Instant.now();
+    }
+
+    /**
+     * Transiciona a {@code EXPIRED} (TIF day expirado en Alpaca, detectado vía reconcile lazy
+     * v2). El reverse de balance/position se aplica igual que en CANCELED — desde el caller.
+     */
+    public void markAsExpired() {
+        if (this.status != OrderStatus.PENDING) {
+            throw new IllegalStateException(
+                    "No se puede marcar como EXPIRED desde status " + this.status);
+        }
+        this.status = OrderStatus.EXPIRED;
+        this.expiredAt = Instant.now();
+    }
+
+    /**
+     * D13 D-RESTORE-AVG-BUY-PRICE: setter package-private invocado por {@code TradingService}
+     * en el path SELL pre-INSERT con el {@code avg_buy_price} actual de la posición. Necesario
+     * para preservar el costo histórico si la SELL se cancela tras haber liquidado la posición.
+     */
+    public void linkAvgBuyPriceAtSubmission(BigDecimal avgBuyPrice) {
+        if (this.side != OrderSide.SELL) {
+            throw new IllegalStateException(
+                    "avg_buy_price_at_submission solo aplica a SELL; este order es " + this.side);
+        }
+        this.avgBuyPriceAtSubmission = avgBuyPrice;
+    }
+
+    /**
+     * Verdadero si la orden está en estado cancelable según SPEC §5.3.2: {@code PENDING} con
+     * {@code alpaca_order_id} ya asignado (= Alpaca confirmó recepción inicial). Defensa
+     * primaria del flujo de cancelación.
+     */
+    public boolean isCancelable() {
+        return this.status == OrderStatus.PENDING && this.alpacaOrderId != null;
     }
 }

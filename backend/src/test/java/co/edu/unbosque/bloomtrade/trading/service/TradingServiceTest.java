@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import co.edu.unbosque.bloomtrade.admin.service.CommissionManager;
 import co.edu.unbosque.bloomtrade.admin.service.MarketScheduleManager;
+import co.edu.unbosque.bloomtrade.audit.Auditor;
 import co.edu.unbosque.bloomtrade.auth.domain.DocumentType;
 import co.edu.unbosque.bloomtrade.auth.domain.User;
 import co.edu.unbosque.bloomtrade.auth.domain.UserStatus;
@@ -78,6 +79,8 @@ class TradingServiceTest {
     @Mock private MarketScheduleManager marketScheduleManager;
     @Mock private UserRepository userRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private Auditor auditor;
+    @Mock private OrderReconciliationService reconciliationService;
 
     private TradingService service;
     private OrderMapper orderMapper;
@@ -98,6 +101,8 @@ class TradingServiceTest {
                         userRepository,
                         eventPublisher,
                         orderMapper,
+                        auditor,
+                        reconciliationService,
                         10_000,
                         null);
     }
@@ -588,7 +593,9 @@ class TradingServiceTest {
                 "5",
                 null,
                 Instant.now().toString(),
-                Instant.now().toString());
+                Instant.now().toString(),
+                null, // canceled_at (HU-F15)
+                null); // expired_at (HU-F15)
     }
 
     private static Order setIdOnOrder(Order order) throws Exception {
@@ -604,13 +611,15 @@ class TradingServiceTest {
     private static AlpacaOrderResponse alpacaFilled(String id, BigDecimal price) {
         return new AlpacaOrderResponse(
                 id, CLIENT_ORDER_ID.toString(), "AAPL", "10", "buy", "market", "filled",
-                price, "10", null, Instant.now().toString(), Instant.now().toString());
+                price, "10", null, Instant.now().toString(), Instant.now().toString(),
+                null, null); // canceled_at + expired_at (HU-F15)
     }
 
     private static AlpacaOrderResponse alpacaAccepted(String id) {
         return new AlpacaOrderResponse(
                 id, CLIENT_ORDER_ID.toString(), "AAPL", "10", "buy", "market", "accepted",
-                null, "0", null, Instant.now().toString(), null);
+                null, "0", null, Instant.now().toString(), null,
+                null, null); // canceled_at + expired_at (HU-F15)
     }
 
     private static User newUserWithStatus(UserStatus status) {

@@ -51,4 +51,20 @@ public record OrderResponse(
         String errorCode,
         String errorMessage,
         Instant submittedAt,
-        Instant executedAt) {}
+        Instant executedAt,
+        // ─── HU-F15 — Cancelación ────────────────────────────────────────────
+        @Schema(description = "Timestamp de la transición CANCELED. NULL si status != CANCELED.")
+                Instant canceledAt,
+        @Schema(
+                description =
+                        "Cancel solicitado pero polling Alpaca dio timeout; reconcile lazy v2 materializará. "
+                                + "Coexiste con status=PENDING. NULL si no hay cancel pendiente.")
+                Instant cancelRequestedAt,
+        @Schema(description = "Timestamp de la transición EXPIRED. NULL si status != EXPIRED.")
+                Instant expiredAt,
+        @Schema(
+                description =
+                        "Solo BUY canceladas/expiradas: monto refundido al balance (string para precisión BigDecimal).")
+                String refundedAmount,
+        @Schema(description = "Solo SELL canceladas/expiradas: cantidad restaurada a la posición.")
+                Integer restoredQty) {}

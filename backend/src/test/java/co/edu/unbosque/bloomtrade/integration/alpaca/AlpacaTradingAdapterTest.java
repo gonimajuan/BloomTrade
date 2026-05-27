@@ -45,7 +45,9 @@ class AlpacaTradingAdapterTest {
         RestClient.Builder builder = RestClient.builder().baseUrl(ALPACA_BASE_URL);
         mockServer = MockRestServiceServer.bindTo(builder).build();
         RestClient restClient = builder.build();
-        adapter = new AlpacaTradingAdapter(restClient);
+        // HU-F15: constructor extendido con polling config — usar defaults prod (200ms × 10).
+        // Estos tests no ejercitan cancelOrder; el polling no se invoca.
+        adapter = new AlpacaTradingAdapter(restClient, 200L, 10);
     }
 
     @Test

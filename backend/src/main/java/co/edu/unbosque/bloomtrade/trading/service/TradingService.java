@@ -2,6 +2,10 @@ package co.edu.unbosque.bloomtrade.trading.service;
 
 import co.edu.unbosque.bloomtrade.admin.service.CommissionManager;
 import co.edu.unbosque.bloomtrade.admin.service.MarketScheduleManager;
+import co.edu.unbosque.bloomtrade.audit.AuditEvent;
+import co.edu.unbosque.bloomtrade.audit.AuditEvent.AuditResult;
+import co.edu.unbosque.bloomtrade.audit.AuditEventType;
+import co.edu.unbosque.bloomtrade.audit.Auditor;
 import co.edu.unbosque.bloomtrade.auth.domain.User;
 import co.edu.unbosque.bloomtrade.auth.domain.UserStatus;
 import co.edu.unbosque.bloomtrade.auth.exception.AccountNotActiveException;
@@ -9,8 +13,11 @@ import co.edu.unbosque.bloomtrade.auth.profile.catalog.AllowedTickers;
 import co.edu.unbosque.bloomtrade.auth.profile.exception.InvalidTickerException;
 import co.edu.unbosque.bloomtrade.auth.repository.UserRepository;
 import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaApiException;
+import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaOrderNotCancelableException;
+import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaOrderNotFoundException;
 import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaOrderRejectedException;
 import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaTradingAdapter;
+import co.edu.unbosque.bloomtrade.integration.alpaca.AlpacaUnexpectedStatusException;
 import co.edu.unbosque.bloomtrade.integration.alpaca.MarketDataAdapter;
 import co.edu.unbosque.bloomtrade.integration.alpaca.dto.AlpacaOrderResponse;
 import co.edu.unbosque.bloomtrade.portfolio.domain.Position;
@@ -19,16 +26,23 @@ import co.edu.unbosque.bloomtrade.portfolio.repository.UserBalanceRepository;
 import co.edu.unbosque.bloomtrade.portfolio.service.PortfolioService;
 import co.edu.unbosque.bloomtrade.trading.domain.Order;
 import co.edu.unbosque.bloomtrade.trading.domain.OrderSide;
+import co.edu.unbosque.bloomtrade.trading.domain.OrderStatus;
 import co.edu.unbosque.bloomtrade.trading.domain.OrderType;
+import co.edu.unbosque.bloomtrade.trading.dto.CancelOutcome;
+import co.edu.unbosque.bloomtrade.trading.dto.OrderResponse;
 import co.edu.unbosque.bloomtrade.trading.dto.PlaceOrderRequest;
 import co.edu.unbosque.bloomtrade.trading.dto.QuoteRequest;
 import co.edu.unbosque.bloomtrade.trading.dto.QuoteResponse;
+import co.edu.unbosque.bloomtrade.trading.event.OrderCancelPendingEvent;
+import co.edu.unbosque.bloomtrade.trading.event.OrderCanceledEvent;
 import co.edu.unbosque.bloomtrade.trading.event.OrderExecutedEvent;
 import co.edu.unbosque.bloomtrade.trading.event.OrderFailedEvent;
 import co.edu.unbosque.bloomtrade.trading.event.OrderQueuedEvent;
 import co.edu.unbosque.bloomtrade.trading.event.OrderRejectedEvent;
 import co.edu.unbosque.bloomtrade.trading.exception.InsufficientSharesException;
 import co.edu.unbosque.bloomtrade.trading.exception.InvalidQuantityException;
+import co.edu.unbosque.bloomtrade.trading.exception.OrderNotCancelableException;
+import co.edu.unbosque.bloomtrade.trading.exception.OrderNotFoundException;
 import co.edu.unbosque.bloomtrade.trading.exception.ShortSellingNotAllowedException;
 import co.edu.unbosque.bloomtrade.trading.mapper.OrderMapper;
 import co.edu.unbosque.bloomtrade.trading.repository.OrderRepository;
@@ -91,7 +105,10 @@ public class TradingService {
     private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final OrderMapper orderMapper;
+    private final Auditor auditor;
+    private final OrderReconciliationService reconciliationService;
     private final int maxQuantityPerOrder;
+    private static final String RESOURCE_ORDERS = "/api/v1/orders";
 
     /**
      * Serializa procesamiento por {@code clientOrderId} ante requests concurrentes con la misma
@@ -124,6 +141,8 @@ public class TradingService {
             UserRepository userRepository,
             ApplicationEventPublisher eventPublisher,
             OrderMapper orderMapper,
+            Auditor auditor,
+            OrderReconciliationService reconciliationService,
             @Value("${trading.max-quantity-per-order:10000}") int maxQuantityPerOrder,
             @Lazy TradingService self) {
         this.orderRepository = orderRepository;
@@ -136,6 +155,8 @@ public class TradingService {
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         this.orderMapper = orderMapper;
+        this.auditor = auditor;
+        this.reconciliationService = reconciliationService;
         this.maxQuantityPerOrder = maxQuantityPerOrder;
         this.self = self;
     }
@@ -669,4 +690,347 @@ public class TradingService {
             throw new AccountNotActiveException(user.getEstado());
         }
     }
+
+    // ─── HU-F15 — cancelOrder ──────────────────────────────────────────────────
+
+    /**
+     * Cancela una orden Market en estado {@code PENDING + alpaca_order_id != null} (HU-F15).
+     *
+     * <p>Flujo:
+     * <ol>
+     *   <li>Lock canónico balances→positions (D17 F10) — adquirido por
+     *       {@code findByUserIdForUpdate} aunque la operación pueda solo tocar positions (SELL).</li>
+     *   <li>Lookup defensivo {@link OrderRepository#findByIdAndUserId} — 404 si no es del user.</li>
+     *   <li>Short-circuit idempotency: si ya CANCELED o ya tiene cancel_requested_at, retorna
+     *       la orden actual sin tocar Alpaca (D7).</li>
+     *   <li>Si status no cancelable (EXECUTED/REJECTED/FAILED/EXPIRED): 409 + audit
+     *       ORDER_CANCEL_REJECTED.</li>
+     *   <li>Llama {@link AlpacaTradingAdapter#cancelOrder} — polling 2s.</li>
+     *   <li>Switch outcome:
+     *     <ul>
+     *       <li>{@code Canceled}: marcar CANCELED + refund/restore + publish OrderCanceledEvent.</li>
+     *       <li>{@code PendingCancel}: marcar cancel_requested_at + publish OrderCancelPendingEvent.</li>
+     *       <li>{@code RaceFilled}: tratar como EXECUTED late-arrival (D17 D-RACE-FILLED-UX).</li>
+     *     </ul>
+     *   </li>
+     * </ol>
+     *
+     * <p>{@code noRollbackFor}: preserva las filas de audit/orden a pesar de propagar la
+     * excepción al controller. Aplica a {@code OrderNotFoundException}, {@code OrderNotCancelableException},
+     * {@code AlpacaApiException} (502 BROKER_UNAVAILABLE).
+     */
+    @Transactional(
+            noRollbackFor = {
+                OrderNotFoundException.class,
+                OrderNotCancelableException.class,
+                AlpacaApiException.class
+            })
+    public OrderResponse cancelOrder(UUID userId, UUID orderId) {
+        // 1. Lock canónico balances first (D17 F10).
+        userBalanceRepository
+                .findByUserIdForUpdate(userId)
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "Balance no encontrado para userId=" + userId));
+
+        // 2. Lookup defensivo (404 if cross-user or no existe).
+        Order order =
+                orderRepository
+                        .findByIdAndUserId(orderId, userId)
+                        .orElseThrow(() -> new OrderNotFoundException(orderId));
+
+        // 3. Idempotency short-circuit.
+        if (order.getStatus() == OrderStatus.CANCELED) {
+            log.info(
+                    "Idempotent cancel request: order {} ya CANCELED at {}",
+                    orderId,
+                    order.getCanceledAt());
+            auditor.record(
+                    AuditEvent.builder()
+                            .eventType(AuditEventType.ORDER_DUPLICATE_CANCEL_REQUEST)
+                            .resource(RESOURCE_ORDERS)
+                            .result(AuditResult.ALLOWED)
+                            .actorId(userId.toString())
+                            .orderId(orderId.toString())
+                            .detail("existingStatus", "CANCELED")
+                            .detail("alreadyCanceledAt", String.valueOf(order.getCanceledAt()))
+                            .build());
+            return orderMapper.toResponse(order);
+        }
+        if (order.getCancelRequestedAt() != null) {
+            log.info(
+                    "Idempotent cancel request: order {} ya tiene cancel_requested_at at {}",
+                    orderId,
+                    order.getCancelRequestedAt());
+            auditor.record(
+                    AuditEvent.builder()
+                            .eventType(AuditEventType.ORDER_DUPLICATE_CANCEL_REQUEST)
+                            .resource(RESOURCE_ORDERS)
+                            .result(AuditResult.ALLOWED)
+                            .actorId(userId.toString())
+                            .orderId(orderId.toString())
+                            .detail("existingStatus", "PENDING")
+                            .detail("cancelRequestedAt", String.valueOf(order.getCancelRequestedAt()))
+                            .build());
+            return orderMapper.toResponse(order);
+        }
+        if (!order.isCancelable()) {
+            auditor.record(
+                    AuditEvent.builder()
+                            .eventType(AuditEventType.ORDER_CANCEL_REJECTED)
+                            .resource(RESOURCE_ORDERS)
+                            .result(AuditResult.DENIED)
+                            .actorId(userId.toString())
+                            .orderId(orderId.toString())
+                            .detail("currentStatus", order.getStatus().name())
+                            .detail("reason", "NOT_CANCELABLE")
+                            .build());
+            throw new OrderNotCancelableException(orderId, order.getStatus());
+        }
+
+        // 4. Audit ORDER_CANCEL_REQUESTED ANTES del DELETE Alpaca (preserva audit en caso 502).
+        auditor.record(
+                AuditEvent.builder()
+                        .eventType(AuditEventType.ORDER_CANCEL_REQUESTED)
+                        .resource(RESOURCE_ORDERS)
+                        .result(AuditResult.ALLOWED)
+                        .actorId(userId.toString())
+                        .orderId(orderId.toString())
+                        .detail("alpacaOrderId", order.getAlpacaOrderId())
+                        .detail("side", order.getSide().name())
+                        .detail("ticker", order.getTicker())
+                        .detail("quantity", order.getQuantity())
+                        .detail("quotedTotal", order.getQuotedTotal().toPlainString())
+                        .build());
+
+        // 5. Llama Alpaca cancel.
+        CancelOutcome outcome;
+        try {
+            outcome = alpacaTradingAdapter.cancelOrder(order.getAlpacaOrderId());
+        } catch (AlpacaOrderNotFoundException | AlpacaOrderNotCancelableException drift) {
+            // Drift detectado: Alpaca dice "no existe" o "no cancelable". Reconcile lazy v2
+            // inline: fetch estado real + materializar transición correspondiente (Lote C).
+            log.warn(
+                    "Drift detected al cancelar order {}: {} — reconcile inline",
+                    orderId,
+                    drift.getMessage());
+            auditor.record(
+                    AuditEvent.builder()
+                            .eventType(AuditEventType.ORDER_CANCEL_REQUESTED)
+                            .resource(RESOURCE_ORDERS)
+                            .result(AuditResult.ALLOWED)
+                            .actorId(userId.toString())
+                            .orderId(orderId.toString())
+                            .detail("outcome", "DRIFT_RECONCILE")
+                            .detail("driftType", drift.getClass().getSimpleName())
+                            .build());
+            try {
+                Order reconciled = reconciliationService.applyDriftReconcile(order);
+                BigDecimal refundedAmount =
+                        reconciled.getSide() == OrderSide.BUY
+                                        && (reconciled.getStatus() == OrderStatus.CANCELED
+                                                || reconciled.getStatus() == OrderStatus.EXPIRED
+                                                || reconciled.getStatus() == OrderStatus.REJECTED)
+                                ? reconciled.getQuotedTotal()
+                                : null;
+                Integer restoredQty =
+                        reconciled.getSide() == OrderSide.SELL
+                                        && (reconciled.getStatus() == OrderStatus.CANCELED
+                                                || reconciled.getStatus() == OrderStatus.EXPIRED
+                                                || reconciled.getStatus() == OrderStatus.REJECTED)
+                                ? reconciled.getQuantity()
+                                : null;
+                return orderMapper.toResponseWithRefund(reconciled, refundedAmount, restoredQty);
+            } catch (IllegalStateException unexpected) {
+                // Estado Alpaca no-terminal en drift (raro). Tratar como BROKER_UNAVAILABLE.
+                log.error(
+                        "Drift reconcile inline falló para order {}: {}",
+                        orderId,
+                        unexpected.getMessage());
+                auditor.record(
+                        AuditEvent.builder()
+                                .eventType(AuditEventType.ORDER_CANCEL_FAILED)
+                                .resource(RESOURCE_ORDERS)
+                                .result(AuditResult.DENIED)
+                                .actorId(userId.toString())
+                                .orderId(orderId.toString())
+                                .detail("reason", "DRIFT_UNEXPECTED_STATE")
+                                .detail("errorMessage", unexpected.getMessage())
+                                .build());
+                throw new AlpacaApiException(
+                        "Drift reconcile inline falló: " + unexpected.getMessage(), 1, unexpected);
+            }
+        } catch (AlpacaUnexpectedStatusException unexpected) {
+            log.error(
+                    "Status inesperado al cancelar order {}: {}",
+                    orderId,
+                    unexpected.getMessage());
+            auditor.record(
+                    AuditEvent.builder()
+                            .eventType(AuditEventType.ORDER_CANCEL_FAILED)
+                            .resource(RESOURCE_ORDERS)
+                            .result(AuditResult.DENIED)
+                            .actorId(userId.toString())
+                            .orderId(orderId.toString())
+                            .detail("reason", "UNEXPECTED_STATUS")
+                            .detail("unexpectedStatus", unexpected.getUnexpectedStatus())
+                            .build());
+            throw new AlpacaApiException(
+                    "Status inesperado de Alpaca: " + unexpected.getUnexpectedStatus(),
+                    1,
+                    unexpected);
+        } catch (AlpacaApiException apiEx) {
+            log.error("Alpaca down al cancelar order {}: {}", orderId, apiEx.getMessage());
+            auditor.record(
+                    AuditEvent.builder()
+                            .eventType(AuditEventType.ORDER_CANCEL_FAILED)
+                            .resource(RESOURCE_ORDERS)
+                            .result(AuditResult.DENIED)
+                            .actorId(userId.toString())
+                            .orderId(orderId.toString())
+                            .detail("reason", "BROKER_UNAVAILABLE")
+                            .detail("attempts", apiEx.getAttempts())
+                            .build());
+            throw apiEx;
+        }
+
+        // 6. Switch outcome.
+        return switch (outcome) {
+            case CancelOutcome.Canceled c ->
+                    applyCanceledTransition(order, c, OrderCanceledEvent.CancelSource.USER_REQUEST);
+            case CancelOutcome.PendingCancel ignored -> applyPendingCancelTransition(order);
+            case CancelOutcome.RaceFilled r -> applyRaceFilledTransition(order, r);
+        };
+    }
+
+    /** Aplica transición CANCELED + reverse de balance (BUY) o position (SELL) + publish event. */
+    private OrderResponse applyCanceledTransition(
+            Order order,
+            CancelOutcome.Canceled canceled,
+            OrderCanceledEvent.CancelSource source) {
+        BigDecimal refundedAmount = null;
+        Integer restoredQty = null;
+
+        if (order.getSide() == OrderSide.BUY) {
+            // Refund: revertir el debit optimista del placeOrder queued (D29 F09).
+            refundedAmount = order.getQuotedTotal();
+            portfolioService.credit(order.getUserId(), refundedAmount);
+        } else {
+            // Restore: re-INSERT o increment de la posición (D-SELL-QUEUED-RISK F10).
+            // D13 D-RESTORE-AVG-BUY-PRICE: usar snapshot del avg_buy_price si existe; fallback
+            // a quoted_unit_price para SELLs legacy pre-V6.
+            restoredQty = order.getQuantity();
+            BigDecimal avgBuyPrice = order.getAvgBuyPriceAtSubmission();
+            if (avgBuyPrice == null) {
+                avgBuyPrice = order.getQuotedUnitPrice();
+                log.warn(
+                        "SELL legacy sin avg_buy_price_at_submission — usando quoted_unit_price como fallback: orderId={}",
+                        order.getId());
+            }
+            portfolioService.upsertPosition(
+                    order.getUserId(), order.getTicker(), restoredQty, avgBuyPrice);
+        }
+
+        order.markAsCanceled();
+        order = orderRepository.save(order);
+
+        eventPublisher.publishEvent(
+                new OrderCanceledEvent(
+                        order.getId(),
+                        order.getUserId(),
+                        order.getTicker(),
+                        order.getSide(),
+                        order.getQuantity(),
+                        order.getAlpacaOrderId(),
+                        order.getQuotedTotal(),
+                        refundedAmount,
+                        restoredQty,
+                        order.getCanceledAt(),
+                        source));
+
+        return orderMapper.toResponseWithRefund(order, refundedAmount, restoredQty);
+    }
+
+    /** Polling-timeout: marca cancel_requested_at, publish info-only event. */
+    private OrderResponse applyPendingCancelTransition(Order order) {
+        order.markCancelRequested();
+        order = orderRepository.save(order);
+
+        eventPublisher.publishEvent(
+                new OrderCancelPendingEvent(
+                        order.getId(),
+                        order.getUserId(),
+                        order.getTicker(),
+                        order.getSide(),
+                        order.getQuantity(),
+                        order.getAlpacaOrderId(),
+                        order.getCancelRequestedAt()));
+
+        log.info(
+                "Cancel polling-timeout para order {} — reconcile lazy v2 materializará",
+                order.getId());
+        return orderMapper.toResponse(order);
+    }
+
+    /**
+     * RACE_FILLED: Alpaca llenó la orden durante el polling de cancel. Trata como EXECUTED
+     * late-arrival (D17 D-RACE-FILLED-UX). Para BUY ajusta balance por delta vs quotedTotal;
+     * para SELL acredita el execution_total real (posición ya estaba decrementada en queued).
+     */
+    private OrderResponse applyRaceFilledTransition(
+            Order order, CancelOutcome.RaceFilled race) {
+        BigDecimal execPrice = race.filledAvgPrice();
+        order.markAsExecuted(order.getAlpacaOrderId(), execPrice);
+        BigDecimal executionTotal = order.getExecutionTotal();
+
+        BigDecimal newBalance;
+        if (order.getSide() == OrderSide.BUY) {
+            // BUY queued: balance debitado por quotedTotal. Ajustar por delta vs execution_total real.
+            BigDecimal delta = executionTotal.subtract(order.getQuotedTotal());
+            if (delta.signum() > 0) {
+                try {
+                    newBalance = portfolioService.debit(order.getUserId(), delta);
+                } catch (InsufficientFundsException insuf) {
+                    // Edge raro: el delta excede el balance restante. Log y propagar como ALPACA_API.
+                    log.error(
+                            "RACE_FILLED BUY delta debit failed para order {}: {}",
+                            order.getId(),
+                            insuf.getMessage());
+                    throw new AlpacaApiException(
+                            "RACE_FILLED: fondos insuficientes para slippage delta", 1, insuf);
+                }
+            } else if (delta.signum() < 0) {
+                newBalance = portfolioService.credit(order.getUserId(), delta.negate());
+            } else {
+                newBalance = portfolioService.getBalance(order.getUserId());
+            }
+        } else {
+            // SELL queued: balance no se había acreditado (D-SELL-QUEUED-RISK F10). Acreditar ahora.
+            newBalance = portfolioService.credit(order.getUserId(), executionTotal);
+        }
+
+        order = orderRepository.save(order);
+
+        eventPublisher.publishEvent(
+                new OrderExecutedEvent(
+                        order.getId(),
+                        order.getUserId(),
+                        order.getTicker(),
+                        order.getSide(),
+                        order.getQuantity(),
+                        execPrice,
+                        executionTotal,
+                        order.getQuotedCommission(),
+                        newBalance,
+                        order.getAlpacaOrderId(),
+                        null,
+                        Boolean.FALSE));
+
+        log.warn(
+                "RACE_FILLED para order {}: la orden se ejecutó durante el cancel polling",
+                order.getId());
+        return orderMapper.toResponse(order);
+    }
+
 }

@@ -29,6 +29,8 @@ import co.edu.unbosque.bloomtrade.portfolio.exception.InsufficientFundsException
 import co.edu.unbosque.bloomtrade.trading.exception.InsufficientSharesException;
 import co.edu.unbosque.bloomtrade.trading.exception.InvalidQuantityException;
 import co.edu.unbosque.bloomtrade.trading.exception.InvalidSideException;
+import co.edu.unbosque.bloomtrade.trading.exception.OrderNotCancelableException;
+import co.edu.unbosque.bloomtrade.trading.exception.OrderNotFoundException;
 import co.edu.unbosque.bloomtrade.trading.exception.ShortSellingNotAllowedException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
@@ -539,6 +541,42 @@ public class GlobalExceptionHandler {
                                 502,
                                 code,
                                 ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    // ─── HU-F15 Cancel order handlers ──────────────────────────────────────────
+
+    @ExceptionHandler(OrderNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleOrderNotFound(
+            OrderNotFoundException ex, HttpServletRequest request) {
+        // Defensa anti-enumeración: NO incluir el orderId en el response (sí en log interno).
+        log.debug("Order not found or cross-user attempt: orderId={}", ex.getOrderId());
+        String code = "ORDER_NOT_FOUND";
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(
+                        ErrorResponse.of(
+                                404,
+                                code,
+                                ValidationMessages.humanFor(code),
+                                request.getRequestURI(),
+                                TraceIdFilter.currentTraceId()));
+    }
+
+    @ExceptionHandler(OrderNotCancelableException.class)
+    public ResponseEntity<ErrorResponse> handleOrderNotCancelable(
+            OrderNotCancelableException ex, HttpServletRequest request) {
+        String code = "ORDER_NOT_CANCELABLE";
+        String message =
+                String.format(
+                        "Tu orden está en estado %s y no puede cancelarse.",
+                        ex.getCurrentStatus());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(
+                        ErrorResponse.of(
+                                409,
+                                code,
+                                message,
                                 request.getRequestURI(),
                                 TraceIdFilter.currentTraceId()));
     }

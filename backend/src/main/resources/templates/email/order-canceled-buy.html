@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title th:text="${isExpired} ? 'Orden de compra expirada' : 'Orden de compra cancelada'">Orden de compra cancelada</title>
+  </head>
+  <body style="font-family: Arial, Helvetica, sans-serif; background-color: #f4f5f7; margin: 0; padding: 24px;">
+    <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 8px; padding: 32px;">
+      <h1 style="color: #0f172a; font-size: 22px; margin-top: 0;"
+          th:text="${isExpired} ? 'Tu orden expiró sin ejecutarse' : 'Tu orden fue cancelada'">Tu orden fue cancelada</h1>
+      <p style="color: #334155; font-size: 15px;">
+        Hola <strong th:text="${nombreCompleto}">Inversionista</strong>,
+      </p>
+      <p style="color: #334155; font-size: 15px;" th:if="${!isExpired}">
+        Tu orden de compra de
+        <strong th:text="${quantity}">5</strong>
+        acciones de
+        <strong th:text="${ticker}">AAPL</strong>
+        fue cancelada antes de ejecutarse.
+      </p>
+      <p style="color: #334155; font-size: 15px;" th:if="${isExpired}">
+        Tu orden de compra de
+        <strong th:text="${quantity}">5</strong>
+        acciones de
+        <strong th:text="${ticker}">AAPL</strong>
+        expiró sin ejecutarse (TIF day del mercado terminó antes del fill).
+      </p>
+      <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+        <tr>
+          <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Monto restaurado a tu saldo</td>
+          <td style="padding: 8px 0; color: #16a34a; font-size: 14px; font-weight: bold; text-align: right;">
+            USD <strong th:text="${refundedAmount}">1025.50</strong>
+          </td>
+        </tr>
+        <tr style="border-top: 1px solid #e2e8f0;" th:if="${newBalance != null}">
+          <td style="padding: 8px 0; color: #0f172a; font-size: 15px; font-weight: bold;">Saldo actual</td>
+          <td style="padding: 8px 0; color: #0f172a; font-size: 15px; font-weight: bold; text-align: right;">
+            USD <span th:text="${newBalance}">8025.50</span>
+          </td>
+        </tr>
+      </table>
+      <p style="margin: 28px 0;">
+        <a th:href="${loginUrl}"
+           href="#"
+           style="background: #16a34a; color: #ffffff; text-decoration: none; padding: 12px 22px; border-radius: 6px; font-size: 15px; display: inline-block;">
+          Ver mi portafolio
+        </a>
+      </p>
+      <p style="color: #94a3b8; font-size: 12px; margin-bottom: 0;">
+        BloomTrade · Universidad El Bosque · Este es un correo automático, no respondas a este mensaje.
+      </p>
+    </div>
+  </body>
+</html>

@@ -36,7 +36,9 @@ public record AlpacaOrderResponse(
         @JsonProperty("filled_qty") String filledQty,
         @JsonProperty("rejected_reason") String rejectedReason,
         @JsonProperty("submitted_at") String submittedAt,
-        @JsonProperty("filled_at") String filledAt) {
+        @JsonProperty("filled_at") String filledAt,
+        @JsonProperty("canceled_at") String canceledAt,
+        @JsonProperty("expired_at") String expiredAt) {
 
     public boolean isFilled() {
         return "filled".equalsIgnoreCase(status);
@@ -46,8 +48,23 @@ public record AlpacaOrderResponse(
         return "rejected".equalsIgnoreCase(status);
     }
 
-    /** Estado terminal: ya no transicionará más (filled o rejected o canceled). */
+    /** HU-F15: Alpaca confirmó cancelación. */
+    public boolean isCanceled() {
+        return "canceled".equalsIgnoreCase(status);
+    }
+
+    /** HU-F15: TIF day expirado en Alpaca sin fill. */
+    public boolean isExpired() {
+        return "expired".equalsIgnoreCase(status);
+    }
+
+    /** HU-F15: Market Order parcial-filled — caso fuera de scope F15 (D19), señal de drift. */
+    public boolean isPartiallyFilled() {
+        return "partially_filled".equalsIgnoreCase(status);
+    }
+
+    /** Estado terminal: ya no transicionará más (filled / rejected / canceled / expired). */
     public boolean isTerminal() {
-        return isFilled() || isRejected() || "canceled".equalsIgnoreCase(status);
+        return isFilled() || isRejected() || isCanceled() || isExpired();
     }
 }

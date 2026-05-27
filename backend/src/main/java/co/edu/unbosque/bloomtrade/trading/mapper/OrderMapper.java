@@ -35,7 +35,51 @@ public class OrderMapper {
                 order.getErrorCode(),
                 order.getErrorMessage(),
                 order.getSubmittedAt(),
-                order.getExecutedAt());
+                order.getExecutedAt(),
+                // HU-F15 — los 5 campos nuevos son nullable; @JsonInclude(NON_NULL) los omite del JSON.
+                order.getCanceledAt(),
+                order.getCancelRequestedAt(),
+                order.getExpiredAt(),
+                null, // refundedAmount: poblado por toResponseWithRefund cuando aplica
+                null); // restoredQty: idem
+    }
+
+    /**
+     * HU-F15 — overload que enriquece la respuesta con {@code refundedAmount} (BUY canceled/expired)
+     * o {@code restoredQty} (SELL canceled/expired). Usado por {@code TradingService.cancelOrder}
+     * tras aplicar el reverso de balance/position.
+     */
+    public OrderResponse toResponseWithRefund(
+            Order order, BigDecimal refundedAmount, Integer restoredQty) {
+        OrderResponse base = toResponse(order);
+        return new OrderResponse(
+                base.id(),
+                base.clientOrderId(),
+                base.ticker(),
+                base.side(),
+                base.type(),
+                base.quantity(),
+                base.quotedUnitPrice(),
+                base.executionUnitPrice(),
+                base.commission(),
+                base.quotedTotal(),
+                base.executionTotal(),
+                base.status(),
+                base.alpacaOrderId(),
+                base.errorCode(),
+                base.errorMessage(),
+                base.submittedAt(),
+                base.executedAt(),
+                base.canceledAt(),
+                base.cancelRequestedAt(),
+                base.expiredAt(),
+                // scale=2 HALF_UP — currency presentation (consistente con quote/execution).
+                refundedAmount == null
+                        ? null
+                        : refundedAmount
+                                .setScale(2, java.math.RoundingMode.HALF_UP)
+                                .toPlainString(),
+                restoredQty);
     }
 
     private static String toPlainString(BigDecimal value) {
