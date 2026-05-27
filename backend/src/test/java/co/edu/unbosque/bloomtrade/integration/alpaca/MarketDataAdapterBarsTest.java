@@ -42,16 +42,18 @@ class MarketDataAdapterBarsTest {
 
     @Test
     void getIntradayBars_happyPath_returnsParsedBars() {
+        // Shape REAL del endpoint single-symbol: "bars" es array directo, no map por ticker.
+        // El bug histórico era stub con shape multi-symbol — pasaba tests pero fallaba contra
+        // Alpaca real con "Error while extracting response".
         String responseBody =
                 """
                 {
-                  "bars": {
-                    "AAPL": [
-                      { "t": "2026-05-25T13:30:00Z", "o": 189.50, "h": 189.80, "l": 189.30, "c": 189.60, "v": 1500000 },
-                      { "t": "2026-05-25T13:45:00Z", "o": 189.60, "h": 190.10, "l": 189.55, "c": 190.05, "v": 1320000 },
-                      { "t": "2026-05-25T14:00:00Z", "o": 190.05, "h": 190.50, "l": 190.00, "c": 190.45, "v": 1610000 }
-                    ]
-                  },
+                  "bars": [
+                    { "t": "2026-05-25T13:30:00Z", "o": 189.50, "h": 189.80, "l": 189.30, "c": 189.60, "v": 1500000 },
+                    { "t": "2026-05-25T13:45:00Z", "o": 189.60, "h": 190.10, "l": 189.55, "c": 190.05, "v": 1320000 },
+                    { "t": "2026-05-25T14:00:00Z", "o": 190.05, "h": 190.50, "l": 190.00, "c": 190.45, "v": 1610000 }
+                  ],
+                  "symbol": "AAPL",
                   "next_page_token": null
                 }
                 """;
@@ -75,7 +77,7 @@ class MarketDataAdapterBarsTest {
 
     @Test
     void getIntradayBars_emptyBarsForTicker_returnsEmptyList() {
-        String responseBody = "{\"bars\":{},\"next_page_token\":null}";
+        String responseBody = "{\"bars\":[],\"symbol\":\"WOW\",\"next_page_token\":null}";
         mockServer
                 .expect(
                         requestTo(

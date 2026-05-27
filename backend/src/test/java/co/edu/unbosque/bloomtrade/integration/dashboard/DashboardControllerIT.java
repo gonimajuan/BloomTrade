@@ -117,7 +117,10 @@ class DashboardControllerIT {
                                                 "{\"symbol\":\"X\",\"quote\":{\"ap\":100.00,\"bp\":100.00,\"as\":100,\"bs\":100,\"t\":\"2026-05-25T14:00:00Z\"}}")));
     }
 
-    /** Stub para TODOS los /bars devolviendo 2 barras simples. */
+    /**
+     * Stub para TODOS los /bars devolviendo 1 barra simple. Shape SINGLE-SYMBOL (bug raíz Día
+     * 10: antes usaba shape multi-symbol que jamás coincidía con el endpoint real de Alpaca).
+     */
     private void stubAllBarsOk() {
         wm.stubFor(
                 WireMock.get(urlPathMatching("/v2/stocks/[A-Z0-9]+/bars"))
@@ -126,7 +129,7 @@ class DashboardControllerIT {
                                         .withStatus(200)
                                         .withHeader("Content-Type", "application/json")
                                         .withBody(
-                                                "{\"bars\":{\"X\":[{\"t\":\"2026-05-25T13:30:00Z\",\"o\":99.00,\"h\":100.50,\"l\":98.80,\"c\":100.00,\"v\":1000}]},\"next_page_token\":null}")));
+                                                "{\"bars\":[{\"t\":\"2026-05-25T13:30:00Z\",\"o\":99.00,\"h\":100.50,\"l\":98.80,\"c\":100.00,\"v\":1000}],\"next_page_token\":null}")));
     }
 
     /** Stub que devuelve 503 a todas las llamadas a /quotes/latest. */

@@ -4,6 +4,7 @@ import co.edu.unbosque.bloomtrade.trading.domain.Order;
 import co.edu.unbosque.bloomtrade.trading.domain.OrderSide;
 import co.edu.unbosque.bloomtrade.trading.history.repository.OrderSpecifications;
 import co.edu.unbosque.bloomtrade.trading.repository.OrderRepository;
+import co.edu.unbosque.bloomtrade.trading.service.OrderReconciliationService;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -31,9 +32,13 @@ public class OrderHistoryService {
     private static final Logger log = LoggerFactory.getLogger(OrderHistoryService.class);
 
     private final OrderRepository orderRepository;
+    private final OrderReconciliationService reconciliationService;
 
-    public OrderHistoryService(OrderRepository orderRepository) {
+    public OrderHistoryService(
+            OrderRepository orderRepository,
+            OrderReconciliationService reconciliationService) {
         this.orderRepository = orderRepository;
+        this.reconciliationService = reconciliationService;
     }
 
     @Transactional(readOnly = true)
@@ -42,6 +47,9 @@ public class OrderHistoryService {
             Optional<String> ticker,
             Optional<OrderSide> side,
             Pageable pageable) {
+        // Antes de leer: reconciliar PENDING contra Alpaca para que el historial refleje fills
+        // que ocurrieron desde el último read (cierra deuda viva #8 para single-user MVP).
+        reconciliationService.reconcilePending(userId);
         Specification<Order> spec = Specification.where(OrderSpecifications.byUser(userId));
         if (ticker.isPresent()) {
             spec = spec.and(OrderSpecifications.byTicker(ticker.get()));

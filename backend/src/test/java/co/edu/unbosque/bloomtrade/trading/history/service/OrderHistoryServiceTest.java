@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import co.edu.unbosque.bloomtrade.trading.domain.Order;
 import co.edu.unbosque.bloomtrade.trading.domain.OrderSide;
 import co.edu.unbosque.bloomtrade.trading.repository.OrderRepository;
+import co.edu.unbosque.bloomtrade.trading.service.OrderReconciliationService;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,12 +37,13 @@ class OrderHistoryServiceTest {
     private static final UUID USER_ID = UUID.randomUUID();
 
     @Mock private OrderRepository orderRepository;
+    @Mock private OrderReconciliationService reconciliationService;
 
     private OrderHistoryService service;
 
     @BeforeEach
     void setup() {
-        service = new OrderHistoryService(orderRepository);
+        service = new OrderHistoryService(orderRepository, reconciliationService);
     }
 
     private static Page<Order> emptyPage() {

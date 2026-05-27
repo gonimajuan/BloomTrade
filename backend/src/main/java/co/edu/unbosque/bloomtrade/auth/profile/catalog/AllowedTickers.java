@@ -6,6 +6,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Catálogo inmutable de los 25 activos del MVP (ARCHITECTURE.md §1), agrupados por mercado.
@@ -22,6 +24,7 @@ public final class AllowedTickers {
 
     private static final Map<Market, List<String>> BY_MARKET = buildByMarket();
     private static final Set<String> ALL = buildAll();
+    private static final Set<String> MARKET_DATA_SUPPORTED = buildMarketDataSupported();
 
     private AllowedTickers() {}
 
@@ -42,7 +45,19 @@ public final class AllowedTickers {
     private static Set<String> buildAll() {
         return BY_MARKET.values().stream()
                 .flatMap(List::stream)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /**
+     * Subconjunto de tickers cuyo proveedor actual de market data (Alpaca paper trading free
+     * tier) entrega cotizaciones reales. Los mercados internacionales (LSE/TSE/ASX) requieren
+     * un proveedor distinto post-MVP — siempre fallarán en Alpaca con 404. Este set se usa para
+     * computar {@code marketDataAvailable} del dashboard sin contar los fallos esperados.
+     */
+    private static Set<String> buildMarketDataSupported() {
+        return Stream.of(Market.NYSE, Market.NASDAQ)
+                .flatMap(m -> BY_MARKET.get(m).stream())
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     /** {@code true} si {@code ticker} está en el catálogo de 25 (case-sensitive). */
@@ -58,5 +73,10 @@ public final class AllowedTickers {
     /** Total de tickers en el catálogo (siempre 25 en el MVP). */
     public static int size() {
         return ALL.size();
+    }
+
+    /** Subconjunto de tickers cuyo proveedor de market data está activo (NYSE + NASDAQ). */
+    public static Set<String> marketDataSupported() {
+        return MARKET_DATA_SUPPORTED;
     }
 }
