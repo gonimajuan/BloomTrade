@@ -6,8 +6,8 @@ import co.edu.unbosque.bloomtrade.integration.alpaca.dto.AlpacaBarsResponse;
 import co.edu.unbosque.bloomtrade.integration.alpaca.dto.AlpacaLatestQuoteResponse;
 import io.github.resilience4j.retry.annotation.Retry;
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import org.slf4j.Logger;
@@ -100,20 +100,24 @@ public class MarketDataAdapter {
     }
 
     /**
-     * Obtiene las barras intradía de hoy ({@code timeframe=15Min}) para renderizar sparklines
-     * en el dashboard (HU-F18 Lote A — plan D5 + D18).
+     * Obtiene las barras recientes ({@code timeframe=15Min}) para renderizar sparklines en el
+     * dashboard (HU-F18 Lote A — plan D5 + D18).
      *
-     * <p>URI: {@code GET /v2/stocks/{symbol}/bars?timeframe=15Min&start={today00Z}&limit=50&adjustment=raw&feed=iex}.
-     * Devuelve hasta 50 barras (cubre el día completo: 24h × 60min / 15min = 96 bars máx).
-     * Si Alpaca no encuentra barras (mercado cerrado, ticker delisted), retorna lista vacía
-     * en vez de excepción — el caller decide cómo mostrar el sparkline vacío.
+     * <p>URI: {@code GET /v2/stocks/{symbol}/bars?timeframe=15Min&start={now-7d}&limit=50&adjustment=raw&feed=iex}.
+     * Devuelve hasta 50 barras de los últimos 7 días — Alpaca entrega las más recientes dentro
+     * de la ventana, así que si el mercado lleva cerrado un weekend o feriado, las barras del
+     * último día abierto siguen visibles. Cambio Día 10 polish: ventana fija de hoy hacía que
+     * los sparklines estuvieran vacíos fuera de horario US (Bug 2 del audit single-user).
+     *
+     * <p>Si Alpaca no encuentra barras (ticker delisted o no cubierto por Alpaca, p.ej. LSE/TSE/
+     * ASX en paper free tier), retorna lista vacía — el caller decide cómo mostrar el sparkline
+     * vacío.
      *
      * @throws MarketDataUnavailableException si Alpaca Data cae tras 3 retries, 429, o 404/4xx.
      */
     @Retry(name = "alpacaDataApi", fallbackMethod = "getIntradayBarsFallback")
     public List<IntradayBar> getIntradayBars(String ticker) {
-        String start =
-                LocalDate.now(ZoneOffset.UTC).atStartOfDay(ZoneOffset.UTC).toInstant().toString();
+        String start = Instant.now().minus(Duration.ofDays(7)).toString();
         try {
             AlpacaBarsResponse response =
                     restClient
@@ -131,17 +135,14 @@ public class MarketDataAdapter {
                             .retrieve()
                             .body(AlpacaBarsResponse.class);
 
-            if (response == null || response.bars() == null) {
-                log.debug("Alpaca Data bars ticker={} response sin bars", ticker);
-                return Collections.emptyList();
-            }
-            List<AlpacaBar> alpacaBars = response.bars().get(ticker);
-            if (alpacaBars == null || alpacaBars.isEmpty()) {
+            if (response == null
+                    || response.bars() == null
+                    || response.bars().isEmpty()) {
                 log.debug("Alpaca Data bars ticker={} sin barras en ventana", ticker);
                 return Collections.emptyList();
             }
             List<IntradayBar> bars =
-                    alpacaBars.stream()
+                    response.bars().stream()
                             .map(
                                     b ->
                                             new IntradayBar(

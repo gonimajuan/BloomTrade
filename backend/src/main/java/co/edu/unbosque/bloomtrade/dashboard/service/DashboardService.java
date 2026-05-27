@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -88,7 +89,7 @@ public class DashboardService {
             groups.add(dashboardMapper.toMarketGroupDto(e.getKey(), items));
         }
 
-        String marketDataAvailable = computeAvailability(prices, allTickers.size());
+        String marketDataAvailable = computeAvailability(prices);
         log.debug(
                 "Dashboard snapshot userId={} marketDataAvailable={}",
                 userId,
@@ -98,15 +99,24 @@ public class DashboardService {
     }
 
     /**
-     * Plan D-MARKET-DATA-AVAILABILITY: cuenta nulls de PRECIOS. Sparklines vacías no influyen
-     * (pueden ser legítimas en weekends/holidays sin que Alpaca esté caído).
+     * Plan D-MARKET-DATA-AVAILABILITY (revisado Día 10 polish): cuenta nulls de PRECIOS sólo
+     * entre los tickers cuyo proveedor de market data está activo (NYSE + NASDAQ en MVP).
+     * LSE/TSE/ASX siempre retornan null porque Alpaca paper free tier no las cubre — contarlas
+     * marcaba "partial" siempre, oscureciendo fallas reales del proveedor.
+     *
+     * <p>Sparklines vacías no influyen (pueden ser legítimas en weekends/holidays).
      */
-    private String computeAvailability(Map<String, BigDecimal> prices, int totalTickers) {
-        long nulls = prices.values().stream().filter(v -> v == null).count();
-        if (nulls == 0) {
+    private String computeAvailability(Map<String, BigDecimal> prices) {
+        Set<String> supported = AllowedTickers.marketDataSupported();
+        long supportedNulls =
+                prices.entrySet().stream()
+                        .filter(e -> supported.contains(e.getKey()))
+                        .filter(e -> e.getValue() == null)
+                        .count();
+        if (supportedNulls == 0) {
             return "true";
         }
-        if (nulls == totalTickers) {
+        if (supportedNulls == supported.size()) {
             return "false";
         }
         return "partial";

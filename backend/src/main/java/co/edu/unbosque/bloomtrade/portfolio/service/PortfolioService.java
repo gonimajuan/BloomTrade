@@ -11,6 +11,7 @@ import co.edu.unbosque.bloomtrade.trading.domain.OrderStatus;
 import co.edu.unbosque.bloomtrade.trading.exception.InsufficientSharesException;
 import co.edu.unbosque.bloomtrade.trading.exception.ShortSellingNotAllowedException;
 import co.edu.unbosque.bloomtrade.trading.repository.OrderRepository;
+import co.edu.unbosque.bloomtrade.trading.service.OrderReconciliationService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
@@ -18,6 +19,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,14 +63,19 @@ public class PortfolioService {
     private final UserBalanceRepository userBalanceRepository;
     private final PositionRepository positionRepository;
     private final OrderRepository orderRepository;
+    private final OrderReconciliationService reconciliationService;
 
     public PortfolioService(
             UserBalanceRepository userBalanceRepository,
             PositionRepository positionRepository,
-            OrderRepository orderRepository) {
+            OrderRepository orderRepository,
+            // @Lazy rompe el ciclo de inicialización: OrderReconciliationService inyecta este
+            // mismo PortfolioService para hacer upsertPosition/credit al materializar fills.
+            @Lazy OrderReconciliationService reconciliationService) {
         this.userBalanceRepository = userBalanceRepository;
         this.positionRepository = positionRepository;
         this.orderRepository = orderRepository;
+        this.reconciliationService = reconciliationService;
     }
 
     /**
@@ -315,6 +322,7 @@ public class PortfolioService {
      */
     @Transactional(readOnly = true)
     public UserBalance getBalanceEntity(UUID userId) {
+        reconciliationService.reconcilePending(userId);
         return userBalanceRepository
                 .findById(userId)
                 .orElseThrow(
@@ -330,6 +338,7 @@ public class PortfolioService {
      */
     @Transactional(readOnly = true)
     public List<Position> getPositions(UUID userId) {
+        reconciliationService.reconcilePending(userId);
         return positionRepository.findByUserIdAndQuantityGreaterThanOrderByTicker(userId, 0);
     }
 
@@ -344,6 +353,7 @@ public class PortfolioService {
      */
     @Transactional(readOnly = true)
     public List<Order> getPendingOrders(UUID userId) {
+        reconciliationService.reconcilePending(userId);
         return orderRepository.findByUserIdAndStatusAndAlpacaOrderIdIsNotNullOrderBySubmittedAtDesc(
                 userId, OrderStatus.PENDING);
     }
@@ -378,6 +388,7 @@ public class PortfolioService {
      */
     @Transactional(readOnly = true)
     public AccountEquityDto getAccountEquity(UUID userId, java.util.Map<String, BigDecimal> prices) {
+        reconciliationService.reconcilePending(userId);
         UserBalance balance = getBalanceEntity(userId);
         String balanceStr = balance.getBalance().setScale(2, RoundingMode.HALF_UP).toPlainString();
         String currency = balance.getCurrency();
