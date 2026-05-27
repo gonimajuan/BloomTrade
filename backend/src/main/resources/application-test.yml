@@ -62,6 +62,11 @@ alpaca:
 trading:
   default-commission-pct: 0.02
   max-quantity-per-order: 10000
+  # HU-F15: override del polling de cancel para tests rápidos (~50ms total vs 2s prod).
+  cancel:
+    polling:
+      interval-ms: 10
+      max-attempts: 5
 
 # Resilience4j override en perfil 'test': wait-duration cortos para que los IT que validan
 # retry+fallback (Lote G) no demoren ~13s por test. Misma cantidad de intentos (3); solo

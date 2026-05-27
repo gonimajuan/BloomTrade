@@ -7,6 +7,7 @@ import co.edu.unbosque.bloomtrade.audit.Auditor;
 import co.edu.unbosque.bloomtrade.auth.domain.User;
 import co.edu.unbosque.bloomtrade.auth.repository.UserRepository;
 import co.edu.unbosque.bloomtrade.notification.Notifier;
+import co.edu.unbosque.bloomtrade.notification.dto.OrderCanceledEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderExecutedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderFailedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderQueuedEmailCommand;
@@ -297,6 +298,135 @@ public class OrderEventListener {
             notifier.sendOrderQueuedEmailSell(command);
         } else {
             notifier.sendOrderQueuedEmailBuy(command);
+        }
+    }
+
+    // ─── HU-F15 — Listeners de cancelación ───────────────────────────────────
+
+    /**
+     * Listener de {@link OrderCanceledEvent}: emite audit ORDER_CANCELED + dispara email
+     * (BUY o SELL según side). El audit ORDER_CANCEL_REQUESTED ya se emitió desde
+     * {@code TradingService.cancelOrder} antes del DELETE a Alpaca.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void onOrderCanceled(OrderCanceledEvent event) {
+        String userId = event.userId().toString();
+        String orderId = event.orderId().toString();
+
+        AuditEvent.Builder builder =
+                AuditEvent.builder()
+                        .eventType(AuditEventType.ORDER_CANCELED)
+                        .resource(RESOURCE)
+                        .result(AuditResult.ALLOWED)
+                        .actorId(userId)
+                        .orderId(orderId)
+                        .detail("ticker", event.ticker())
+                        .detail("side", event.side().name())
+                        .detail("quantity", event.quantity())
+                        .detail("alpacaOrderId", event.alpacaOrderId())
+                        .detail("source", event.source().name());
+        if (event.refundedAmount() != null) {
+            builder.detail("refundedAmount", event.refundedAmount().toPlainString());
+        }
+        if (event.restoredQty() != null) {
+            builder.detail("restoredQty", event.restoredQty());
+        }
+        auditor.record(builder.build());
+
+        Optional<User> userOpt = userRepository.findById(event.userId());
+        if (userOpt.isEmpty()) {
+            log.warn("Usuario no encontrado para email order-canceled: userId={}", userId);
+            return;
+        }
+        User user = userOpt.get();
+        OrderCanceledEmailCommand command =
+                new OrderCanceledEmailCommand(
+                        userId,
+                        user.getEmail(),
+                        user.getNombreCompleto(),
+                        event.ticker(),
+                        event.quantity(),
+                        event.refundedAmount(),
+                        event.restoredQty(),
+                        null /* newBalance: lo lee el template si está disponible (BUY) */,
+                        false /* isExpired=false para cancel */);
+
+        if (event.side() == OrderSide.SELL) {
+            notifier.sendOrderCanceledEmailSell(command);
+        } else {
+            notifier.sendOrderCanceledEmailBuy(command);
+        }
+    }
+
+    /**
+     * Listener de {@link OrderCancelPendingEvent}: solo log (audit ORDER_CANCEL_REQUESTED con
+     * outcome=PENDING_CANCEL ya fue emitido por TradingService.cancelOrder).
+     * NO envía email — el usuario verá feedback visual en UI hasta que reconcile lazy v2
+     * materialice la transición a CANCELED.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onOrderCancelPending(OrderCancelPendingEvent event) {
+        log.info(
+                "Cancel pending event procesado (sin email): orderId={} side={} ticker={} cancelRequestedAt={}",
+                event.orderId(),
+                event.side(),
+                event.ticker(),
+                event.cancelRequestedAt());
+    }
+
+    /**
+     * Listener de {@link OrderExpiredEvent}: emite audit ORDER_EXPIRED + dispara email reusando
+     * los templates {@code order-canceled-{buy,sell}.html} con flag {@code isExpired=true}
+     * (D15 D-EMAIL-EXPIRED-REUSE).
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void onOrderExpired(OrderExpiredEvent event) {
+        String userId = event.userId().toString();
+        String orderId = event.orderId().toString();
+
+        AuditEvent.Builder builder =
+                AuditEvent.builder()
+                        .eventType(AuditEventType.ORDER_EXPIRED)
+                        .resource(RESOURCE)
+                        .result(AuditResult.ALLOWED)
+                        .actorId(userId)
+                        .orderId(orderId)
+                        .detail("ticker", event.ticker())
+                        .detail("side", event.side().name())
+                        .detail("quantity", event.quantity())
+                        .detail("alpacaOrderId", event.alpacaOrderId());
+        if (event.refundedAmount() != null) {
+            builder.detail("refundedAmount", event.refundedAmount().toPlainString());
+        }
+        if (event.restoredQty() != null) {
+            builder.detail("restoredQty", event.restoredQty());
+        }
+        auditor.record(builder.build());
+
+        Optional<User> userOpt = userRepository.findById(event.userId());
+        if (userOpt.isEmpty()) {
+            log.warn("Usuario no encontrado para email order-expired: userId={}", userId);
+            return;
+        }
+        User user = userOpt.get();
+        OrderCanceledEmailCommand command =
+                new OrderCanceledEmailCommand(
+                        userId,
+                        user.getEmail(),
+                        user.getNombreCompleto(),
+                        event.ticker(),
+                        event.quantity(),
+                        event.refundedAmount(),
+                        event.restoredQty(),
+                        null,
+                        true /* isExpired=true para expired */);
+
+        if (event.side() == OrderSide.SELL) {
+            notifier.sendOrderCanceledEmailSell(command);
+        } else {
+            notifier.sendOrderCanceledEmailBuy(command);
         }
     }
 }

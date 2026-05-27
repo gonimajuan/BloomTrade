@@ -48,6 +48,7 @@ class OrderReconciliationServiceTest {
     @Mock private OrderRepository orderRepository;
     @Mock private AlpacaTradingAdapter alpacaTradingAdapter;
     @Mock private PortfolioService portfolioService;
+    @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock private PlatformTransactionManager transactionManager;
 
     private OrderReconciliationService service;
@@ -59,6 +60,7 @@ class OrderReconciliationServiceTest {
                         orderRepository,
                         alpacaTradingAdapter,
                         portfolioService,
+                        eventPublisher,
                         transactionManager);
     }
 
@@ -97,7 +99,9 @@ class OrderReconciliationServiceTest {
                 "1",
                 null,
                 null,
-                null);
+                null,
+                null, // canceled_at (HU-F15)
+                null); // expired_at (HU-F15)
     }
 
     // ─── reconcilePending ──────────────────────────────────────────────────────

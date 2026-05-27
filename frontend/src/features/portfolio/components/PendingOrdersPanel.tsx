@@ -1,4 +1,5 @@
 import { Clock } from 'lucide-react';
+import { CancelOrderButton } from '@/features/trading/components/CancelOrderButton';
 import { formatLocalDateTime } from '@/lib/dateFormat';
 import { portfolioMessages } from '@/lib/messages.es';
 import type { PendingOrderDto } from '@/types/api';
@@ -53,9 +54,19 @@ export function PendingOrdersPanel({ orders, isFetching = false }: Props) {
                   ` · ${currencyFormatter.format(Number(order.quotedTotal))}`}
               </span>
             </div>
-            <span className="inline-flex w-fit items-center gap-1 rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">
-              {portfolioMessages.pendingBadge}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex w-fit items-center gap-1 rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">
+                {portfolioMessages.pendingBadge}
+              </span>
+              <CancelOrderButton
+                orderId={order.orderId}
+                side={order.side}
+                quantity={order.quantity}
+                ticker={order.ticker}
+                quotedTotal={order.quotedTotal}
+                cancelRequestedAt={order.cancelRequestedAt}
+              />
+            </div>
           </li>
         ))}
       </ul>

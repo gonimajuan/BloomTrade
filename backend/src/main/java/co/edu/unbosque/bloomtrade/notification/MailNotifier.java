@@ -6,6 +6,7 @@ import co.edu.unbosque.bloomtrade.audit.AuditEventType;
 import co.edu.unbosque.bloomtrade.audit.Auditor;
 import co.edu.unbosque.bloomtrade.notification.dto.AccountLockedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.CancellationScheduledEmailCommand;
+import co.edu.unbosque.bloomtrade.notification.dto.OrderCanceledEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderExecutedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderFailedEmailCommand;
 import co.edu.unbosque.bloomtrade.notification.dto.OrderQueuedEmailCommand;
@@ -58,6 +59,10 @@ public class MailNotifier implements Notifier {
     private static final String ORDER_FAILED_SELL_SUBJECT = "Tu orden de venta no pudo procesarse";
     private static final String ORDER_QUEUED_BUY_SUBJECT = "Tu orden de compra quedó en cola";
     private static final String ORDER_QUEUED_SELL_SUBJECT = "Tu orden de venta quedó en cola";
+    private static final String ORDER_CANCELED_BUY_SUBJECT = "Tu orden de compra fue cancelada";
+    private static final String ORDER_CANCELED_SELL_SUBJECT = "Tu orden de venta fue cancelada";
+    private static final String ORDER_EXPIRED_BUY_SUBJECT = "Tu orden de compra expiró sin ejecutarse";
+    private static final String ORDER_EXPIRED_SELL_SUBJECT = "Tu orden de venta expiró sin ejecutarse";
 
     private final JavaMailSender mailSender;
     private final SpringTemplateEngine templateEngine;
@@ -369,6 +374,56 @@ public class MailNotifier implements Notifier {
                 ctx,
                 AuditEventType.ORDER_QUEUED_EMAIL_FAILED,
                 "order-queued-sell-email");
+    }
+
+    // ─── HU-F15 — Cancelación de órdenes ─────────────────────────────────────
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendOrderCanceledEmailBuy(OrderCanceledEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("ticker", command.ticker());
+        ctx.setVariable("quantity", command.quantity());
+        ctx.setVariable(
+                "refundedAmount",
+                command.refundedAmount() != null ? command.refundedAmount().toPlainString() : null);
+        ctx.setVariable(
+                "newBalance",
+                command.newBalance() != null ? command.newBalance().toPlainString() : null);
+        ctx.setVariable("isExpired", command.isExpired());
+        ctx.setVariable("loginUrl", loginUrl);
+        String subject = command.isExpired() ? ORDER_EXPIRED_BUY_SUBJECT : ORDER_CANCELED_BUY_SUBJECT;
+        send(
+                command.userId(),
+                command.toEmail(),
+                subject,
+                "email/order-canceled-buy",
+                ctx,
+                AuditEventType.ORDER_CANCEL_EMAIL_FAILED,
+                "order-canceled-buy-email");
+    }
+
+    @Override
+    @Async("notificationExecutor")
+    public void sendOrderCanceledEmailSell(OrderCanceledEmailCommand command) {
+        Context ctx = new Context();
+        ctx.setVariable("nombreCompleto", command.nombreCompleto());
+        ctx.setVariable("ticker", command.ticker());
+        ctx.setVariable("quantity", command.quantity());
+        ctx.setVariable("restoredQty", command.restoredQty());
+        ctx.setVariable("isExpired", command.isExpired());
+        ctx.setVariable("loginUrl", loginUrl);
+        String subject =
+                command.isExpired() ? ORDER_EXPIRED_SELL_SUBJECT : ORDER_CANCELED_SELL_SUBJECT;
+        send(
+                command.userId(),
+                command.toEmail(),
+                subject,
+                "email/order-canceled-sell",
+                ctx,
+                AuditEventType.ORDER_CANCEL_EMAIL_FAILED,
+                "order-canceled-sell-email");
     }
 
     private void send(

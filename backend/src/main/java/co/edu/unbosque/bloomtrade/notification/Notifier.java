@@ -101,4 +101,20 @@ public interface Notifier {
      * crédito al balance llegará al ejecutarse en la próxima apertura de mercado.
      */
     void sendOrderQueuedEmailSell(OrderQueuedEmailCommand command);
+
+    // ─── HU-F15 — Cancelación de órdenes ────────────────────────────────────
+
+    /**
+     * Notifica que la orden de <b>compra</b> fue cancelada o expirada (HU-F15). El flag
+     * {@code isExpired} del command decide el copy del template (D15 D-EMAIL-EXPIRED-REUSE).
+     * Reusa template {@code email/order-canceled-buy.html} con context {@code isExpired}.
+     */
+    void sendOrderCanceledEmailBuy(co.edu.unbosque.bloomtrade.notification.dto.OrderCanceledEmailCommand command);
+
+    /**
+     * Notifica que la orden de <b>venta</b> fue cancelada o expirada (HU-F15). El flag
+     * {@code isExpired} del command decide el copy del template. La posición fue restaurada;
+     * el balance no se modificó (la venta queued nunca acreditó).
+     */
+    void sendOrderCanceledEmailSell(co.edu.unbosque.bloomtrade.notification.dto.OrderCanceledEmailCommand command);
 }

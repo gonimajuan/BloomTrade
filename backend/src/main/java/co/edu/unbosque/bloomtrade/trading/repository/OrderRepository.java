@@ -33,6 +33,14 @@ public interface OrderRepository
     List<Order> findByUserIdAndStatusAndAlpacaOrderIdIsNotNullOrderBySubmittedAtDesc(
             UUID userId, OrderStatus status);
 
+    /**
+     * HU-F15 — lookup defensivo anti-enumeración para {@code POST /api/v1/orders/{id}/cancel}.
+     * Empareja {@code id} Y {@code userId} en la misma query; si {@code id} pertenece a otro
+     * usuario el resultado es {@code Optional.empty()} y el caller responde 404
+     * {@code ORDER_NOT_FOUND} — el cliente no puede distinguir "no existe" de "es ajena".
+     */
+    Optional<Order> findByIdAndUserId(UUID id, UUID userId);
+
     // HU-F17 extiende JpaSpecificationExecutor para soporte de filtros dinámicos
     // (ticker, side) + paginación nativa Spring Data via OrderSpecifications.
 }

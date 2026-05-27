@@ -80,6 +80,13 @@ const MESSAGES: Record<string, string> = {
     'No tienes posición en este ticker. BloomTrade no permite ventas en corto.',
   INSUFFICIENT_SHARES:
     'No tienes suficientes acciones para vender la cantidad solicitada.',
+
+  // ── HU-F15 (cancelar orden Market) ───────────────────────────────────────
+  ORDER_NOT_FOUND: 'No se encontró la orden solicitada.',
+  ORDER_NOT_CANCELABLE:
+    'Tu orden ya está en estado terminal y no puede cancelarse.',
+  BROKER_UNAVAILABLE:
+    'El broker no respondió. Tu orden sigue en cola. Intenta de nuevo en unos minutos.',
 };
 
 export function humanFor(code: string): string {
@@ -131,6 +138,7 @@ export const dashboardMessages = {
       quantity: 'Cantidad',
       status: 'Estado',
       date: 'Fecha',
+      actions: 'Acciones', // HU-F15
     },
     sideBuy: 'COMPRA',
     sideSell: 'VENTA',
@@ -139,6 +147,8 @@ export const dashboardMessages = {
       EXECUTED: 'EJECUTADA',
       REJECTED: 'RECHAZADA',
       FAILED: 'FALLIDA',
+      CANCELED: 'CANCELADA', // HU-F15
+      EXPIRED: 'EXPIRADA', // HU-F15
     } as Record<string, string>,
   },
 };

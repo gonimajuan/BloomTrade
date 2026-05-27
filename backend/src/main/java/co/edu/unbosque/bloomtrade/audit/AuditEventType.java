@@ -198,5 +198,60 @@ public enum AuditEventType {
     ORDER_FAILED_EMAIL_FAILED,
 
     /** Email "tu orden quedó en cola" no enviado. */
-    ORDER_QUEUED_EMAIL_FAILED
+    ORDER_QUEUED_EMAIL_FAILED,
+
+    // ─── HU-F15 — Cancelar orden Market ──────────────────────────────────────
+
+    /**
+     * Cancelación solicitada por el usuario. Se emite ANTES del DELETE a Alpaca, dentro de la
+     * transacción del cancel. {@code details: { orderId, alpacaOrderId, side, ticker, quantity,
+     * quotedTotal, outcome }} donde {@code outcome} ∈ {"CANCELED", "PENDING_CANCEL", "RACE_FILLED"}
+     * dependiendo del resultado del polling (SPEC §5.1 paso 9 + §9.1).
+     */
+    ORDER_CANCEL_REQUESTED,
+
+    /**
+     * Transición {@code PENDING → CANCELED} aplicada. Emitido desde {@code TradingService}
+     * (polling-OK) o desde {@code OrderReconciliationService} v2 (reconcile lazy materializa
+     * un PENDING+cancelRequestedAt o un Alpaca canceled outbound). {@code details: { orderId,
+     * alpacaOrderId, side, ticker, quantity, refundedAmount/restoredQty, canceledAt, source }}
+     * donde {@code source} ∈ {"USER_REQUEST", "BROKER_CANCEL", "DRIFT_RECONCILE"}.
+     */
+    ORDER_CANCELED,
+
+    /**
+     * Transición {@code PENDING → EXPIRED} aplicada vía reconcile lazy v2 (Alpaca reportó
+     * {@code expired} — TIF day terminó sin fill). El reverse se aplica igual que en CANCELED.
+     * {@code details: { orderId, alpacaOrderId, side, ticker, quantity, refundedAmount/restoredQty,
+     * expiredAt }}.
+     */
+    ORDER_EXPIRED,
+
+    /**
+     * Request idempotente: el usuario re-cliqueó "Cancelar" sobre orden ya CANCELED o con
+     * {@code cancel_requested_at} ya seteado. NO se llamó a Alpaca, NO se ejecutó segundo
+     * refund. {@code details: { orderId, existingStatus, alreadyCanceledAt o cancelRequestedAt }}.
+     */
+    ORDER_DUPLICATE_CANCEL_REQUEST,
+
+    /**
+     * Usuario intentó cancelar orden en estado terminal no cancelable ({@code EXECUTED},
+     * {@code REJECTED}, {@code FAILED}, {@code EXPIRED}). Respuesta 409. {@code details:
+     * { orderId, currentStatus, reason: "NOT_CANCELABLE" }}.
+     */
+    ORDER_CANCEL_REJECTED,
+
+    /**
+     * Cancel falló por error técnico: Alpaca caído tras 3 retries o respuesta inesperada.
+     * Respuesta 502. Estado BD intacto (orden sigue PENDING, sin cancel_requested_at).
+     * {@code details: { orderId, reason: "BROKER_UNAVAILABLE" o "UNEXPECTED_STATUS" }}.
+     */
+    ORDER_CANCEL_FAILED,
+
+    /**
+     * Email "Tu orden fue cancelada/expiró" no se pudo enviar (SMTP down, MailHog caído, etc.).
+     * El estado de la orden y el reverse de balance/position SÍ se aplicaron — esto es solo el
+     * efecto colateral de notificación. {@code details: { orderId, side, isExpired }}.
+     */
+    ORDER_CANCEL_EMAIL_FAILED
 }

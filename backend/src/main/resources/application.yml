@@ -126,7 +126,7 @@ alpaca:
   connect-timeout: 2s
   read-timeout: 5s
 
-# Trading — HU-F09. Parametrización de la lógica de órdenes.
+# Trading — HU-F09 + HU-F15. Parametrización de la lógica de órdenes.
 trading:
   # Comisión por defecto si config.commission_rates está vacía (fallback fail-safe).
   # En operación normal el valor proviene de BD (HU-F30 lo expondrá en UI admin).
@@ -134,3 +134,10 @@ trading:
   # Cantidad máxima por orden Market. D7: hardcoded a 10000 en MVP, configurable
   # vía env var sin redeploy para escape hatch.
   max-quantity-per-order: 10000
+  # HU-F15 D4: polling canónico async de cancelación. Tras DELETE /v2/orders/{id} a Alpaca,
+  # el adapter polea GET /v2/orders/{id} cada interval-ms hasta max-attempts veces o hasta
+  # ver estado terminal (canceled / filled / etc.). Total timeout = interval × attempts.
+  cancel:
+    polling:
+      interval-ms: 200
+      max-attempts: 10  # = 2s timeout total

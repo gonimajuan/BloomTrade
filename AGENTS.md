@@ -24,11 +24,134 @@
 
 | Campo | Valor |
 |---|---|
-| Branch | `feat/HU-F18-F17-dashboard-historial` (no movida tras `ce7dfa2`). Working tree con cambios del Día 10 checkpoint 1 listos para commit gigante: 17 modificados (4 backend + 13 frontend) + 14 nuevos (1 backend, 1 frontend, 6 `docs/diagrams/`, 6 `load-tests/`). Mensaje commit en `C:\Users\juang\AppData\Local\Temp\bt-day10-polish.txt` (ruta completa P6). |
-| HU activa | **Día 10 estabilización — checkpoint 1 (diagramas C4 + JMeter setup + mini-HU token-rotation-logout + audit single-user P0/P1)**. NO es HU formal — es bundle de pulido + docs + infra preparada. La mini-HU `HU-F0X-token-rotation-logout` se atacó como bugfix sin SDD (decisión del usuario consciente, registrada). Audit cruzado del flujo single-user con Explore agent + deuda viva produjo 6 IDs; 5 cerrados con código, 1 verificado como falso positivo. Tests: backend `mvn verify` 357 (288 unit + 69 IT) verdes; frontend vitest 27/27 + `npm run build` verde 3375 módulos. |
-| Sprint | 2 cerrado funcional (commit `ce7dfa2`). **Día 10 en curso** — checkpoint 1 listo para commit + push. JMeter diferido a post-MVP por decisión usuario (memoria `project_jmeter_post_mvp.md`). Sprint 1+2 Review/Retro + Informe Final + APRENDIZAJES Día 10 pendientes. |
-| Próximo paso | **Humano firma el commit Día 10 polish** (`git add -A && git commit -F C:\Users\juang\AppData\Local\Temp\bt-day10-polish.txt` — ruta completa P6) + push + PR. **Smokes visuales recomendados** (no bloqueantes, ~5 min): (a) login → esperar 15 min sin acción → click cualquier endpoint protegido → debería redirigir a /login con banner ámbar "Tu sesión expiró"; (b) borrar accessToken de localStorage en DevTools y recargar /portfolio → debería ir a /login SIN banner (entrada anónima legítima); (c) en MFA, presionar resend dos veces seguidas → ver banner ámbar "Espera unos segundos…" + botón "Reenviar en Ns"; (d) provocar error 4xx en /trade → ver banner de error con `Código: XYZ · traceId: …`; (e) `/portfolio` durante refetch → ver tabla dimmed mientras polling; (f) abrir `docs/diagrams/c4-context.md` en VS Code con Mermaid preview → render OK. Tras checkpoint commit: arrancar Día 10 checkpoint 2 (Sprint Reviews + Informe Final). |
-| Deuda viva (NO bloqueante) | ~~(1) Mini-HU `HU-F0X-token-rotation-logout`~~ **CERRADA en Día 10 checkpoint 1** (`JwtAuthenticationEntryPoint` + 4 archivos backend + 4 frontend; cierra también #17 y comentarios D17 F16+F21 + D-T5.2 F18 en tests IT). (2) Tests IT webhooks Stripe con WireMock. (3) `ARCHITECTURE.md` §5 interfaces con prefijo `I`. (4) `useBlocker` requires DataRouter migration. (5) Generación auto de `frontend/constants/tickers.ts` desde OpenAPI. (6) `JWT_REFRESH_SECRET` eliminado de `.env.example`. ~~(7) JMeter ESC-R1+ESC-R2~~ **DIFERIDA a post-MVP** por decisión usuario 2026-05-25 (memoria `project_jmeter_post_mvp.md`); planes y script ya commiteados en `load-tests/` para retomar. (8) **Reconciliation Alpaca-paper vs BloomTrade BD** — extendido HU-F10 D9. Mitigado UX-wise por HU-F16 `pendingOrders[]`. Fix real (job nocturno) sigue pendiente. (9) `clientOrderLocks` ConcurrentHashMap crece monotónico (D25 F09) — MVP single-user insignificante. (10) Polygon.io como alterno de market data (post-MVP). (11) **D28 F09 hardening**: check en `IntegrationConfig.validateCredentials` que rechace `ALPACA_BASE_URL` terminado en `/v2`. (12) **D29 F09 hardening**: ya implementado en HU-F16 `pendingOrders[]`. (13) HU-F09 orden encolada del demo viernes 2026-05-22: aún pendiente reconciliar manualmente vs Alpaca paper account. (14) **HU-F10 D17 hardening (post-MVP)**: lock canónico `balances→positions` serializa SELLs concurrentes. Refactor a per-ticker locks si multi-user. ~~(15) HU-F10 D10 (post-F16): extender `useTickerOptions` para filtrar `TickerDropdown` por posiciones cuando side=SELL.~~ **CERRADA en HU-F18 Lote E**. ~~(16) `InvalidSideException.sideNotYetImplemented()` dead code post HU-F10.~~ **CERRADA en HU-F18 Lote E**. ~~(17) **HU-F16 D17**: 403 vs 401 sin JWT cross-cutting~~ **CERRADA en Día 10 checkpoint 1** (junto con #1). (18) **HU-F16 D2 PERF**: `MarketDataAdapter` tiene retry interno 3× con backoff exp. ~~(19) Cache de market data~~ **CERRADA en HU-F18 Lote A**. (20) **NUEVA HU-F18 D-SPARKLINE-CACHE V2**: V1 sin cache de bars (~50 calls/min/usuario). Si rate-limit golpea, agregar key `market-data:bars:{ticker}:{date}` TTL 5min. (21) **NUEVA HU-F18 D-CACHE-STALE-ON-ERROR V2**: si Alpaca cae sostenidamente, fallback a valor stale del cache antes de devolver null. Requiere TTL soft + tracking aparte. (22) **NUEVA HU-F18 D-REDIS-HEALTH-BANNER**: si Redis cae, mostrar banner UX (no solo log). (23) **NUEVA HU-F18 D-ORDERS-UI-FILTERS-POSTMVP**: F17 widget sin UI de filtros — página `/orders` dedicada queda post-MVP. (24) **NUEVA HU-F18 D-EQUITY-HISTORY-POSTMVP**: curva de equity diaria (chart vs tiempo) requiere snapshot nocturno. (25) **NUEVA HU-F18 D-TOP-MOVERS-POSTMVP**: top 3 ganadores/perdedores descartado en SPEC C3. (26) **NUEVA HU-F18 D-METRICS-CACHE-HIT-RATIO**: micrometer counters para hit/miss ratio del `CachedMarketDataAdapter`. (27) **HU-F17 D-CANCELLED-STATUS-POSTMVP**: `OrderStatus` solo tiene 4 valores (PENDING/EXECUTED/REJECTED/FAILED). HU-F15 introducirá CANCELLED post-MVP. (28) **NUEVA Día 10**: P1-4 audit — validación server-side de `trading.max-quantity-per-order` en `TradingService.quote/placeOrder` (defense-in-depth, ~15 min). (29) **NUEVA Día 10**: P2-x audit pendientes — ALPACA_BASE_URL hardening, `.env.example` cleanup, hook condicional en OrderForm, centralizar formatters de moneda. |
+| Branch | `feat/HU-F15-cancelar-orden`. **Lotes A–F implementados, listo para HITO 6** (commit + push + PR firmado por humano). Working tree con backend + frontend + 3 docs SDD + APRENDIZAJES Día 11 + AGENTS handoff (este bloque). Mensaje commit preparado en `C:\Users\juang\AppData\Local\Temp\bt-hu-f15.txt`. |
+| HU activa | **HU-F15 Cancelar orden Market — cerrada técnicamente.** Sprint 2 funcional + MVP completo + bonus F17 + F15 ✅. **Próxima sesión separada:** revamp UI completo con `frontend-design` skill (no formal HU — pulido visual general del producto previo a evaluación in-vivo). |
+| Sprint | 2 funcional cerrado + Día 10 doc/infra cerrado + Día 11 F15 cerrado. **NINGUNA HU MVP pendiente.** Próximo Sprint conceptual = revamp UI. **Estado tests:** backend `mvn verify` 410 (332 unit + 78 IT) verdes, frontend vitest 27/27 + build 3377 módulos. **Smoke E2E manual HITO 5 pendiente** (plan documentado en sesión actual). |
+| Próximo paso | **HITO 6**: humano firma `git add -A && git commit -F C:\Users\juang\AppData\Local\Temp\bt-hu-f15.txt && git push -u origin feat/HU-F15-cancelar-orden && gh pr create` → squash a `main`. **Smoke E2E manual recomendado pre-merge** (no bloqueante, plan en sesión actual): /portfolio → click "Cancelar" en BUY queued → confirm dialog → window.alert "Orden cancelada — USD X restaurados" → balance actualiza + email MailHog + Alpaca dashboard `canceled`. Tras merge: arrancar **revamp UI** en sesión separada con `frontend-design` skill. |
+| Deuda viva (NO bloqueante) | ~~(1) Mini-HU `HU-F0X-token-rotation-logout`~~ **CERRADA Día 10 checkpoint 1**. (2) Tests IT webhooks Stripe con WireMock. (3) `ARCHITECTURE.md` §5 interfaces con prefijo `I`. (4) `useBlocker` requires DataRouter migration. (5) Generación auto de `frontend/constants/tickers.ts` desde OpenAPI. (6) `JWT_REFRESH_SECRET` eliminado de `.env.example`. ~~(7) JMeter ESC-R1+ESC-R2~~ **DIFERIDA post-MVP**. ~~(8) Reconciliation Alpaca-paper vs BD~~ **CERRADA Día 10 checkpoint 2**. (9) `clientOrderLocks` ConcurrentHashMap crece monotónico (D25 F09). (10) Polygon.io como alterno de market data (post-MVP). (11) **D28 F09 hardening**: check `ALPACA_BASE_URL` terminado en `/v2`. (12) **D29 F09 hardening**: ya implementado HU-F16 `pendingOrders[]`. ~~(13) HU-F09 orden encolada drift~~ **CERRADA Día 10 checkpoint 2**. (14) **HU-F10 D17 hardening (post-MVP)**: lock canónico `balances→positions` serializa SELLs concurrentes. ~~(15) HU-F10 D10~~ **CERRADA HU-F18 Lote E**. ~~(16) Dead code `sideNotYetImplemented`~~ **CERRADA HU-F18 Lote E**. ~~(17) HU-F16 D17 403 vs 401 sin JWT~~ **CERRADA Día 10 checkpoint 1**. (18) **HU-F16 D2 PERF**: `MarketDataAdapter` retry interno con backoff. ~~(19) Cache de market data~~ **CERRADA HU-F18 Lote A**. (20) **D-SPARKLINE-CACHE V2**. (21) **D-CACHE-STALE-ON-ERROR V2**. (22) **D-REDIS-HEALTH-BANNER**. (23) **D-ORDERS-UI-FILTERS-POSTMVP**. (24) **D-EQUITY-HISTORY-POSTMVP**. (25) **D-TOP-MOVERS-POSTMVP**. (26) **D-METRICS-CACHE-HIT-RATIO**. ~~(27) HU-F17 D-CANCELLED-STATUS-POSTMVP~~ **CERRADA HU-F15 Lote A** (OrderStatus extendido a 6 valores + V6). (28) **P1-4 audit Día 10**: validación server-side `max-quantity-per-order`. (29) **P2-x audit Día 10 pendientes**: `.env.example` cleanup (=#6), hook condicional OrderForm, centralizar formatters moneda. ~~(30) Reconciliation reversal canceled/rejected/expired~~ **CERRADA HU-F15 Lote C** (OrderReconciliationService v2). (31) **Pre-test health-check postgres test :5433** sigue post-MVP. (32) **NUEVO HU-F15 D27**: records con muchos campos rompen call sites positional; considerar factory methods nominales. (33) **NUEVO HU-F15 D35 — D-NO-TOAST-SYSTEM-FRONTEND**: frontend usa `window.alert` + `window.confirm` para feedback de cancel; reemplazar por toast global (`react-hot-toast` o `sonner`) en revamp UI post-F15. (34) **NUEVO HU-F15 D26 follow-up**: agregar columna `alpaca_canceled_at` (V7 futura) si emerge necesidad de distinguir "Alpaca confirmó" vs "BloomTrade transicionó". |
+
+---
+
+## Cómo continuar (post HU-F15 → revamp UI con frontend-design)
+
+**Estado actual (2026-05-27, cierre HU-F15 técnico):**
+
+- **Branch `feat/HU-F15-cancelar-orden`** lista para HITO 6 (commit firmado por humano + push + PR).
+- **Tests verdes:** backend `mvn verify` **410 (332 unit + 78 IT)**, +47 vs baseline pre-F15. Frontend vitest **27/27** + build **3377 módulos** (+2 nuevos: `useCancelOrder` + `CancelOrderButton`).
+- **Migración V6 aplicada** en `bloomtrade` (DB principal): `chk_order_status` extendido a 6 valores + 4 columnas nuevas (`cancel_requested_at`, `canceled_at`, `expired_at`, `avg_buy_price_at_submission`) + índice parcial `idx_orders_cancel_requested_at`.
+- **11 decisiones emergentes** durante implementación documentadas en `plan.md` §2.4 (D25–D35) — patrón estable confirmado, F15 es la HU con más emergentes del proyecto por su complejidad (polling + reconcile v2 + drift inline + 4 outcomes + idempotency 2 paths).
+- **APRENDIZAJES.md sección "Día 11 — HU-F15"** con 8 reflexiones técnicas + meta (sealed types vs excepciones, reconcile v2 extensión aditiva, drift inline DRY, idempotencia implícita vs explícita, RACE_FILLED realidad-del-broker, migración aditiva, records y call sites, smoke manual no-opcional).
+
+**Lo primero del humano (HITO 6 pre-merge):**
+
+1. **Commit + push + PR**:
+   ```powershell
+   git add -A
+   git commit -F C:\Users\juang\AppData\Local\Temp\bt-hu-f15.txt
+   git push -u origin feat/HU-F15-cancelar-orden
+   gh pr create  # o desde GitHub
+   ```
+   Squash and merge a `main`.
+
+2. **Smoke E2E manual recomendado pre-merge** (no bloqueante — IT cubren el flujo backend completo):
+   - Pre-setup: `docker compose up -d --build backend frontend`.
+   - Generar orden PENDING+alpacaOrderId: BUY Market en horario pre-mercado COL (3–8:30am) → Alpaca devuelve `accepted` → queda PENDING.
+   - `/portfolio` → sección "Órdenes en cola" → click "Cancelar" → confirm dialog → `window.alert("Orden cancelada — USD X restaurados")` → fila desaparece + `BalanceCard` actualiza.
+   - Verificar: MailHog (`localhost:8025`) email "Tu orden de compra fue cancelada", Kibana (`localhost:5601`) events ORDER_CANCEL_REQUESTED + ORDER_CANCELED, Alpaca dashboard orden `canceled`.
+   - Plan completo de 10 smokes documentado en sesión actual Lote E reporting.
+
+**Próxima sesión (post-merge): revamp UI completo con `frontend-design` skill**
+
+**No es una HU formal** — es pulido visual general del producto previo a evaluación in-vivo. La memoria del proyecto sugiere `frontend-design` skill disponible para diseño distintivo (alejarse del aesthetic genérico AI).
+
+**Áreas candidatas para revamp**:
+
+| Componente | Estado actual | Áreas de mejora |
+|---|---|---|
+| `LoginPage` | Funcional, layout simple | Branding BloomTrade, hero opcional, color palette |
+| `OrderForm` + `OrderQuotePanel` | Funcional con side-aware | Visual consistency, animaciones quote → confirm |
+| `BalanceCard` | RefreshCw button + relative time | Color hierarchy, P&L visual emphasis |
+| `PositionsTable` | Tabla con P&L color-coded | Density, hover states, mobile responsive |
+| `DashboardPage` | EquityCard + grid 25 tickers + SparklinePanel + RecentOrdersWidget | Layout overall, sparkline grande UX |
+| `RecentOrdersWidget` + `PendingOrdersPanel` | Funcional con HU-F15 cancel | Botón Cancel destructive visual + transición canceled fila |
+| **Cancel UX (NUEVA F15)** | `window.confirm` + `window.alert` (D35) | **Reemplazar por toast global** (`sonner` o `react-hot-toast`) + modal de confirmación custom |
+| `AppHeader` | Links Dashboard/Portfolio/Trade/Premium + logout | Branding + user menu polished |
+| Theming general | Tailwind defaults + slate/emerald/rose | Paleta custom + tipografía consistente |
+
+**Decisiones a tomar al arrancar revamp**:
+- Paleta de colores (mantener emerald/rose o pivotear).
+- Tipografía (system fonts o agregar Inter/Roboto).
+- Layout grid (max-width, gutters, breakpoints).
+- Animaciones (sutiles vs notables).
+- Mobile responsive (priority bajo para MVP — single desktop).
+- Toast system: `sonner` (recomendado en STACK.md frontend-design? verificar) vs `react-hot-toast` vs `radix-ui/toast`.
+
+**Pre-requisito al arrancar**: PR de HU-F15 mergeado a `main`. Crear branch nueva `feat/revamp-ui` desde main actualizado.
+
+**Cronograma estimado revamp UI**: 1 día completo. Si va adelantado, P2 cleanup express del audit Día 10 (#6 + #11/#28 + #29 = ~30 min) como cierre.
+
+---
+
+## Cómo continuar (post Día 10 checkpoint 2 → HU-F15 cancelar orden) [HISTÓRICO — completado en sesión 2026-05-27]
+
+**Estado actual (2026-05-26, cierre Día 10 doc + infra + bug fixes):**
+
+- 2 commits del Día 10 firmados por humano (ce7dfa2 + e6f59a1 + checkpoint 2 firmado al final de la sesión actual). Tests verdes: backend mvn verify 363 (294 unit + 69 IT), frontend vitest 27/27 + build 3375 módulos.
+- **Sprint 2 funcional cerrado** — las 9 HUs del MVP §2.1 + bonus F17 implementadas. ÚNICA HU promovible no implementada: **HU-F15 cancelar orden** (ROADMAP §3.4 stretch goal #1).
+- **Decisiones explícitas del Día 10** (todas en memoria):
+  - JMeter ESC-R1+R2 → diferido a post-MVP (`load-tests/` ya commiteado para retomar).
+  - Sprint Reviews/Retros (Sprint 1 + Sprint 2) → **descartados**. Profesor evalúa demo en vivo, no docs reflexivos. Memoria `project_sprint_reviews_descartados.md`.
+  - Informe Final del PDF del curso → **descartado** por misma razón.
+- **APRENDIZAJES.md sección Día 10** actualizada con 7 reflexiones técnicas (audit cruzado pattern, falsos positivos del Explore, bugfix vs SDD para deudas registradas, bug bars shape oculto por stubs, drift Alpaca↔BD lazy reconcile, sparkline mini fracaso por densidad, postgres test :5433 cayó como falso positivo).
+- **Deudas vivas:** ver tabla Trabajo activo. CERRADAS en este Día: #1, #7, #8, #13, #15, #16, #17, #19. Nuevas: #28-#31.
+
+**Lo primero del usuario (HITO 0 pre-HU-F15):**
+
+1. **Confirmar branch base** — el bundle Día 10 está en `feat/HU-F18-F17-dashboard-historial` (¡no es F18+F17 puro, contiene también todo el Día 10!). Si se mergeó a `main` ya: arrancar `feat/HU-F15-cancelar-orden` desde main actualizado. Si no: el humano decide si mergear primero o arrancar la rama desde el último commit.
+2. **Re-validar smokes acumulados del Día 10** si aún no se hizo (no bloqueante, pero buen sanity check antes de HU-F15):
+   - Banner sesión expirada (mini-HU token-rotation).
+   - Reconcile lazy: hacer orden Market hoy con mercado abierto, debe quedar EXECUTED directo. Para validar el lazy real, esperar al cierre + colocar otra orden Market → debe quedar PENDING en BD → al reload del dashboard mañana, debe materializarse a EXECUTED automáticamente.
+   - Dashboard: panel grande de sparkline + grid clickeable funcionando.
+
+**Lo primero de la sesión nueva (Paso 1 SDD de HU-F15):**
+
+Leer en orden:
+1. `CLAUDE.md` (siempre).
+2. `ARCHITECTURE.md` §9 "Estados de una orden" — actualmente hay `Pendiente, Enviada, En Ejecución, Ejecutada, Cancelada` listadas en el modelo de dominio, pero **el enum `OrderStatus` en código solo tiene 4 valores** (PENDING, EXECUTED, REJECTED, FAILED — deuda #27 lo registra). HU-F15 introduce CANCELED.
+3. `ROADMAP.md` §3.4 si describe F15 — el SPEC original puede tener acceptance criteria.
+4. `AGENTS.md` (este archivo).
+
+**Preguntas que el SPEC HU-F15 debe responder (resolver con el usuario antes de codear):**
+
+| Pregunta | Por qué importa |
+|---|---|
+| ¿Qué órdenes son cancelables? | Solo PENDING+alpacaOrderId (queued en Alpaca, sin filled todavía) es lo natural. El path "orden en vuelo dentro del placeOrder polling" es race condition compleja — probablemente fuera de scope. |
+| ¿Refund inmediato del balance en BUY queued? | Cuando se cancela una BUY queued, el balance fue debited optimistamente con `quoted_total` (D29 F09). La cancelación debe revertir ese débito (CREDIT). Reusa la lógica de `OrderReconciliationService` v2 (reversal canceled). |
+| ¿Revert position en SELL queued? | Espejo: SELL queued decrementó posición optimistamente (D-SELL-QUEUED-RISK F10). Cancelación → re-INSERT/UPDATE position. |
+| ¿Endpoint REST? | Conventional Commits sugiere `DELETE /api/v1/orders/{id}` (RESTful), pero `POST /api/v1/orders/{id}/cancel` es más explícito sobre la acción. Decidir. |
+| ¿Idempotencia? | Como `placeOrder` con `clientOrderId`. Si el usuario hace doble-click en "Cancelar", la 2da llamada debe ser 200 OK no 4xx. |
+| ¿UI: dónde aparece el botón "Cancelar"? | Naturales: (a) `PendingOrdersPanel` del portfolio con botón por fila. (b) `RecentOrdersWidget` del dashboard si es PENDING. (c) Página dedicada `/orders` (deuda #23 — está post-MVP). |
+| ¿Reconcile lazy v2 dentro del scope de F15? | El `OrderReconciliationService` v1 actual NO maneja `canceled/rejected/expired` desde Alpaca. F15 obliga a v2 porque después de cancelar via Alpaca, el reconcile debe propagar el CANCELED a BD. Probable scope: F15 incluye v2. |
+| ¿Alpaca cancel API? | `DELETE /v2/orders/{id}` de Alpaca. Devuelve `canceled` async — el adapter debe polling-igual-que-place o trust Alpaca. Definir. |
+| ¿Notificación + audit? | Email "tu orden de X fue cancelada" + audit event `ORDER_CANCELED`. Reusar pattern de `OrderExecutedEvent`. |
+| ¿Estados de origen permitidos? | Solo `PENDING+alpacaOrderId` (queued). `EXECUTED` ya no se puede cancelar. `REJECTED/FAILED` ya son terminales sin Alpaca activa. |
+
+**Esquema de bundle propuesto (refinable en SPEC):**
+
+| Lote | HITO | Contenido aproximado |
+|---|---|---|
+| A | 1 | Backend: `OrderStatus` agregar `CANCELED` + migración Flyway V8 (extender CHECK constraint). `AlpacaTradingAdapter.cancelOrder(alpacaOrderId)`. Tests unit. |
+| B | 2 | Backend: `TradingService.cancelOrder(userId, orderId)` con reversal de balance/position. `CancelOrderResult`. Tests unit + IT (PostgreSQL). |
+| C | 3 | Backend: `OrderReconciliationService` v2 maneja `canceled/rejected/expired` de Alpaca. Si una PENDING es canceled en Alpaca (timeout TIF day, etc.), también reverse. Tests. |
+| D | 4 | Frontend: `useCancelOrder` hook + botón "Cancelar" en `PendingOrdersPanel` con confirmación. Toast de éxito. Reusar `messages.es.ts`. |
+| E | 5 | Tests IT cross-user (`/orders/{id}/cancel` con otro user → 403/404), `mvn verify` completo. |
+| F | 6 | `plan.md` §2.4 emergentes + APRENDIZAJES.md sección "Día 11 — HU-F15" + AGENTS.md handoff + commit message en temp. |
+
+**Después de HU-F15 cerrada:** revamp UI con Claude Design. **Es una sesión separada** (memoria sugiere `frontend-design` skill disponible para diseño distintivo). El usuario tiene la decisión.
+
+**Stretch (si todo va adelantado):**
+- P2 cleanup express del audit Día 10: `.env.example` (#6) + hook condicional OrderForm (#29) + ALPACA_BASE_URL hardening (#11/#28). ~30 min total.
+- Pre-test health-check postgres :5433 (#31). ~10 min.
 
 ---
 

@@ -132,7 +132,13 @@ export interface UpdateProfileRequest {
 
 export type OrderSide = 'BUY' | 'SELL';
 export type OrderType = 'MARKET';
-export type OrderStatus = 'PENDING' | 'EXECUTED' | 'REJECTED' | 'FAILED';
+export type OrderStatus =
+  | 'PENDING'
+  | 'EXECUTED'
+  | 'REJECTED'
+  | 'FAILED'
+  | 'CANCELED' // HU-F15
+  | 'EXPIRED'; // HU-F15
 
 export interface QuoteRequest {
   ticker: string;
@@ -197,6 +203,14 @@ export interface OrderResponse {
   errorMessage: string | null;
   submittedAt: string;
   executedAt: string | null;
+  // HU-F15 (nullable; @JsonInclude(NON_NULL) los omite cuando no aplican)
+  canceledAt?: string | null;
+  cancelRequestedAt?: string | null;
+  expiredAt?: string | null;
+  /** Solo BUY canceladas/expiradas: monto refundido al balance (string para precisión BigDecimal). */
+  refundedAmount?: string | null;
+  /** Solo SELL canceladas/expiradas: cantidad restaurada a la posición. */
+  restoredQty?: number | null;
 }
 
 // ─── HU-F16 + HU-F21 (portafolio y saldo) ──────────────────────────────────
@@ -229,6 +243,8 @@ export interface PendingOrderDto {
   quantity: number;
   submittedAt: string;
   quotedTotal: string | null;
+  /** HU-F15: si seteado, el cancel está en polling-timeout esperando que reconcile lazy v2 lo materialice. */
+  cancelRequestedAt?: string | null;
 }
 
 /** Estado del mark-to-market. Mapea el {@code marketDataAvailable} top-level del response. */

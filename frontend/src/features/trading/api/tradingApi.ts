@@ -37,3 +37,16 @@ export async function placeOrder(
     isIdempotent: response.status === 200,
   };
 }
+
+/**
+ * POST /api/v1/orders/{id}/cancel — cancela orden Market en cola (HU-F15).
+ * Idempotente por order.id: 2da llamada sobre orden ya CANCELED devuelve 200 sin efectos.
+ * Outcomes posibles del body:
+ *   - status=CANCELED + refundedAmount/restoredQty → cancel materializado (polling-OK)
+ *   - status=PENDING + cancelRequestedAt → polling-timeout (reconcile lazy v2 lo cerrará)
+ *   - status=EXECUTED → race-filled (la orden se ejecutó antes del cancel)
+ */
+export async function cancelOrder(orderId: string): Promise<OrderResponse> {
+  const { data } = await apiClient.post<OrderResponse>(`/orders/${orderId}/cancel`);
+  return data;
+}

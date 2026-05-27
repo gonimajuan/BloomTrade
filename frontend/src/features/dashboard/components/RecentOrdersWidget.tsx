@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useOrdersRecent } from '@/features/dashboard/hooks/useOrdersRecent';
+import { CancelOrderButton } from '@/features/trading/components/CancelOrderButton';
 import { formatLocalDateTime } from '@/lib/dateFormat';
 import { dashboardMessages } from '@/lib/messages.es';
 import type { OrderHistoryDto, OrderStatus } from '@/types/api';
@@ -9,6 +10,8 @@ const STATUS_PALETTE: Record<OrderStatus, string> = {
   EXECUTED: 'bg-emerald-100 text-emerald-800',
   REJECTED: 'bg-rose-100 text-rose-800',
   FAILED: 'bg-rose-200 text-rose-900',
+  CANCELED: 'bg-slate-200 text-slate-800', // HU-F15
+  EXPIRED: 'bg-slate-200 text-slate-700', // HU-F15
 };
 
 /**
@@ -89,6 +92,10 @@ function OrdersTable({ orders }: { orders: OrderHistoryDto[] }) {
           <th scope="col" className="pb-2 text-right">
             {h.date}
           </th>
+          {/* HU-F15: columna Acciones (condicional render por fila) */}
+          <th scope="col" className="pb-2 text-right">
+            {h.actions}
+          </th>
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
@@ -116,6 +123,16 @@ function OrdersTable({ orders }: { orders: OrderHistoryDto[] }) {
             </td>
             <td className="py-2 text-right text-xs text-slate-500">
               {formatLocalDateTime(order.submittedAt)}
+            </td>
+            <td className="py-2 text-right">
+              {order.status === 'PENDING' && order.alpacaOrderId && (
+                <CancelOrderButton
+                  orderId={order.orderId}
+                  side={order.side}
+                  quantity={order.quantity}
+                  ticker={order.ticker}
+                />
+              )}
             </td>
           </tr>
         ))}
