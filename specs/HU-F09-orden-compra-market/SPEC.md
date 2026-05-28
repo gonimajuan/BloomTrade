@@ -48,9 +48,9 @@ Es la HU más compleja del MVP. Toca **seis módulos** del catálogo arquitectó
 - Mueve dinero del balance del usuario (operación financiera transaccional con `BigDecimal` — CLAUDE.md regla #9).
 - Crea una entidad de dominio multi-estado (`Order` con su FSM) con trazabilidad explícita.
 - Integra una API externa que **muta estado** del usuario (Alpaca crea órdenes reales en el paper trading account compartido) — distinto a Stripe donde la mutación queda en Stripe.
-- Introduce `MarketDataAdapter` para Polygon.io (consumido aquí parcialmente; HU-F18 lo extenderá con cache + multi-ticker).
+- Introduce `MarketDataAdapter` para Alpaca Market Data (consumido aquí parcialmente; HU-F18 lo extenderá con cache + multi-ticker). Polygon.io quedó diferido a post-MVP (D9 D-MD-PROVIDER).
 
-Materializa las tácticas Bass: TAC-R1 (concurrencia — pool de threads en TradingService), TAC-R3 (priorizar eventos — `PriorityQueue` con órdenes en nivel Alta), TAC-D2 (Retry hacia Alpaca y Polygon), TAC-I1 (Orquestar — `OrderOrchestrator` post-ejecución), TAC-M1 + TAC-I2 (AlpacaAdapter, MarketDataAdapter), TAC-S4 (audit log).
+Materializa las tácticas Bass: TAC-R1 (concurrencia — pool de threads en TradingService), TAC-R3 (priorizar eventos — `PriorityQueue` con órdenes en nivel Alta), TAC-D2 (Retry hacia Alpaca trading y Alpaca Data), TAC-I1 (Orquestar — `OrderOrchestrator` post-ejecución), TAC-M1 + TAC-I2 (AlpacaAdapter, MarketDataAdapter), TAC-S4 (audit log).
 
 ### Dependencias técnicas
 
@@ -92,7 +92,7 @@ Materializa las tácticas Bass: TAC-R1 (concurrencia — pool de threads en Trad
 | Usuario autenticado | INVESTOR | Iniciador del quote y de la confirmación |
 | Sistema BloomTrade | — | Validador, persistente, orquestador |
 | Alpaca Markets | Externo | Ejecutor de la orden (paper trading) |
-| Polygon.io | Externo | Proveedor de precio actual del ticker |
+| Alpaca Market Data | Externo | Proveedor de precio actual del ticker (mismas credenciales que Alpaca trading) |
 | MailHog (dev) | Externo | Receptor de notificaciones email |
 | ElasticSearch | Externo | Receptor de audit events |
 
@@ -101,9 +101,9 @@ Materializa las tácticas Bass: TAC-R1 (concurrencia — pool de threads en Trad
 - Usuario tiene sesión JWT activa con `rol = INVESTOR` y `estado = ACTIVE`.
 - `app.user_balances` tiene fila para el usuario (creada en HU-F01).
 - Migración Flyway V5 aplicada (`app.orders`, `app.positions`, `config.commission_rates`).
-- Variables de entorno Alpaca y Polygon configuradas.
+- Variables de entorno Alpaca (trading + data) configuradas.
 - Alpaca paper trading account compartido disponible (curse account; el balance del paper account es separado del `app.user_balances` interno — ver §8.5).
-- Polygon free tier disponible (5 req/min — suficiente para MVP con 1 usuario testing).
+- Alpaca Market Data disponible (incluido en la cuenta paper; ~200 req/min — suficiente para MVP con 1 usuario testing).
 
 ### Datos requeridos en el sistema
 
@@ -130,7 +130,7 @@ Materializa las tácticas Bass: TAC-R1 (concurrencia — pool de threads en Trad
 7. `TradingService.quote(userId, request)`:
    - Valida `ticker` ∈ los 25 permitidos (lanza `INVALID_TICKER` si no).
    - Valida `quantity` > 0 y ≤ `MAX_QUANTITY_PER_ORDER` (default 10,000 — configurable).
-   - Invoca `MarketDataAdapter.getLatestPrice(ticker)` → `BigDecimal` (Polygon snapshot endpoint).
+   - Invoca `MarketDataAdapter.getLatestPrice(ticker)` → `BigDecimal` (Alpaca Data latest-quote endpoint).
    - Invoca `CommissionManager.calculate(userRole=INVESTOR, total=price×quantity)` → `BigDecimal` redondeado a 2 decimales.
    - Calcula `totalCost = (price × quantity) + commission`.
    - Consulta `app.user_balances.balance` del usuario.
@@ -351,17 +351,17 @@ Materializa las tácticas Bass: TAC-R1 (concurrencia — pool de threads en Trad
 
 **Estado final:** Sin cambios.
 
-#### 5.3.8 Polygon API caída al pedir quote
+#### 5.3.8 Market data (Alpaca) caída al pedir quote
 
-**Cuándo se dispara:** Las 3 llamadas a Polygon (1s, 3s, 5s) fallan.
+**Cuándo se dispara:** Las 3 llamadas a Alpaca Data (1s, 3s, 5s) fallan.
 
 **Respuesta de `/orders/quote`:** HTTP 502 con código `MARKET_DATA_UNAVAILABLE` y `message: "No se pudo obtener el precio actual de {ticker}. Intenta nuevamente."`.
 
 **Respuesta de `/orders`:** Mismo error. Sin orden creada.
 
-**Evento de auditoría:** `QUOTE_FAILED` con `details: { ticker, reason: "POLYGON_API_ERROR" }`.
+**Evento de auditoría:** `QUOTE_FAILED` con `details: { ticker, reason: "ALPACA_DATA_API_ERROR" }`.
 
-> **Degradación post-MVP (TAC-D4):** si HU-F18 introduce el `PriceCache`, en caída de Polygon podemos devolver el último precio cacheado (≤30s old) con flag `stale=true`. MVP: sin cache aún, fallar duro.
+> **Degradación post-MVP (TAC-D4):** si HU-F18 introduce el `PriceCache`, en caída de Alpaca Data podemos devolver el último precio cacheado (≤30s old) con flag `stale=true`. MVP: sin cache aún, fallar duro.
 
 #### 5.3.9 Usuario no autenticado
 
@@ -443,7 +443,7 @@ paths:
         '403':
           description: Cuenta no activa
         '502':
-          description: Polygon no disponible
+          description: Market data (Alpaca) no disponible
 
 components:
   schemas:
@@ -468,7 +468,7 @@ components:
         quantity: { type: integer, example: 10 }
         estimatedUnitPrice:
           type: string
-          description: BigDecimal serializado como string (precisión preservada). Precio actual del ticker según Polygon.
+          description: BigDecimal serializado como string (precisión preservada). Precio actual del ticker según Alpaca Market Data.
           example: "184.50"
         estimatedSubtotal:
           type: string
@@ -567,7 +567,7 @@ paths:
         '422':
           description: Alpaca rechazó la orden
         '502':
-          description: Alpaca o Polygon no disponibles
+          description: Alpaca (trading o market data) no disponible
 
 components:
   schemas:
@@ -702,7 +702,7 @@ CREATE UNIQUE INDEX idx_orders_alpaca_order_id
 
 **Justificación de decisiones:**
 
-- `NUMERIC(19, 4)`: 4 decimales porque el precio de Polygon viene típicamente con 2-3 decimales, y queremos margen para el `avg_buy_price` que es resultado de divisiones. Comisión calculada se redondea a 2 al persistirla (HALF_UP).
+- `NUMERIC(19, 4)`: 4 decimales porque el precio de Alpaca Market Data viene típicamente con 2-3 decimales, y queremos margen para el `avg_buy_price` que es resultado de divisiones. Comisión calculada se redondea a 2 al persistirla (HALF_UP).
 - `ON DELETE RESTRICT` en `user_id`: no permitir borrar un usuario que tiene órdenes históricas (cumplimiento auditoría — los registros financieros se preservan).
 - `client_order_id UNIQUE`: corazón de la idempotencia (§5.2.3).
 - `alpaca_order_id UNIQUE WHERE NOT NULL`: defensa contra reportar dos veces la misma orden ejecutada en Alpaca.
@@ -784,7 +784,7 @@ Ninguna. `app.users` y `app.user_balances` se reutilizan tal como están en V2.
 |---|---|---|
 | TradingService | Iniciador + orquestador | `OrderController`, `TradingService`, `OrderOrchestrator`, `OrderRepository`, paquete `trading/*` (nuevo) |
 | PortfolioService | Notificado (escritura) | `PortfolioService` (servicio + métodos `debit(...)`, `upsertPosition(...)`), `PositionRepository` (nuevo), `UserBalance` (extensión de métodos de dominio) |
-| IntegrationService | Intermediario | `AlpacaAdapter` (nuevo, paquete `integration/alpaca/`), `MarketDataAdapter` (nuevo, paquete `integration/polygon/`) |
+| IntegrationService | Intermediario | `AlpacaAdapter` (nuevo, paquete `integration/alpaca/`), `MarketDataAdapter` (nuevo, paquete `integration/alpaca/`) |
 | AdminService | Proveedor de configuración | `ConfigurationManager` (nuevo, lee de `config.commission_rates`), `CommissionManager` (nuevo, consume ConfigurationManager), `MarketScheduleManager` (nuevo, stub MVP) |
 | NotificationService | Notificado (despacho async) | `Notifier` (extensión: `notifyOrderExecuted`, `notifyOrderFailed`), templates Thymeleaf nuevos |
 | AuditService | Notificado (registro) | `Auditor` (consumido — ya existe), 6 event types nuevos (ver §9.1) |
@@ -819,11 +819,11 @@ Ninguna. `app.users` y `app.user_balances` se reutilizan tal como están en V2.
 
 | Táctica | ID | Cómo se materializa en esta feature |
 |---|---|---|
-| Usar un intermediario | TAC-M1 | `AlpacaAdapter` y `MarketDataAdapter` son los únicos puntos de contacto con Alpaca/Polygon. Cambiar de pasarela en post-MVP es un cambio aislado. |
-| Adaptar la interfaz | TAC-I2 | `AlpacaAdapter` traduce conceptos de Alpaca (asset, qty, side, time_in_force) ↔ conceptos de dominio (Order, Ticker, Quantity, Side). `MarketDataAdapter` traduce snapshot endpoint de Polygon ↔ `LatestPrice(ticker, price, asOf)`. |
+| Usar un intermediario | TAC-M1 | `AlpacaAdapter` y `MarketDataAdapter` son los únicos puntos de contacto con Alpaca (trading y data). Cambiar de proveedor de market data en post-MVP (p. ej. Polygon.io) es un cambio aislado. |
+| Adaptar la interfaz | TAC-I2 | `AlpacaAdapter` traduce conceptos de Alpaca (asset, qty, side, time_in_force) ↔ conceptos de dominio (Order, Ticker, Quantity, Side). `MarketDataAdapter` traduce el latest-quote endpoint de Alpaca Data ↔ `LatestPrice(ticker, price, asOf)`. |
 | Mantener registro de auditoría | TAC-S4 | 6 event types nuevos capturando creación, ejecución, rechazo, falla, idempotencia y bloqueo por cuenta inactiva. |
 | Encapsular | TAC-M3 | `CommissionManager` encapsula el cálculo (TradingService no sabe del schema `config`). `OrderOrchestrator` encapsula la secuencia post-ejecución (debit → upsert position → notify → audit). |
-| Retry | TAC-D2 | `@Retry(name="alpacaApi")` y `@Retry(name="polygonApi")` configurados en `application.yml` con 3 intentos a 1s/3s/5s. |
+| Retry | TAC-D2 | `@Retry(name="alpacaApi")` y `@Retry(name="alpacaDataApi")` configurados en `application.yml` con 3 intentos a 1s/3s/5s. |
 | Diferir el enlace mediante configuración | TAC-M2 | `config.commission_rates` permite cambiar la tasa en runtime sin redeploy (HU-F30 lo expondrá en UI; HU-F09 solo lee). |
 | Orquestar | TAC-I1 | `OrderOrchestrator` coordina la secuencia post-Alpaca: actualizar portafolio → enviar notificación → registrar auditoría (ARCH §4 TradingService). |
 | Autorizar actores | TAC-S2 | El controller exige `rol=INVESTOR` (vía Spring Security `@PreAuthorize` o equivalente). Bloqueo si `estado != ACTIVE`. |
@@ -863,10 +863,10 @@ Punto crítico que **DEBE entenderse antes de implementar**:
 | `ORDER_CREATED` | INSERT en `app.orders` (status=PENDING) | `{ orderId, clientOrderId, ticker, side, type, quantity, quotedTotal }` |
 | `ORDER_EXECUTED` | UPDATE a `status=EXECUTED` post-Alpaca | `{ orderId, alpacaOrderId, executionUnitPrice, executionTotal, commission }` |
 | `ORDER_REJECTED` | UPDATE a `status=REJECTED` (fondos, Alpaca rechazo, ticker no soportado) | `{ orderId, reason, details }` |
-| `ORDER_FAILED` | UPDATE a `status=FAILED` (Alpaca down post-retries, Polygon down) | `{ orderId, reason, lastError, attempts }` |
+| `ORDER_FAILED` | UPDATE a `status=FAILED` (Alpaca down post-retries, Alpaca Data down) | `{ orderId, reason, lastError, attempts }` |
 | `ORDER_DUPLICATE_REQUEST` | clientOrderId ya existe | `{ existingOrderId, clientOrderId }` |
 | `ORDER_BLOCKED_BY_ACCOUNT_STATUS` | Usuario con `estado ∈ {BLOCKED, SUSPENDED}` intenta operar | `{ accountState }` |
-| `QUOTE_FAILED` | Polygon down al pedir quote | `{ ticker, reason, lastError }` |
+| `QUOTE_FAILED` | Alpaca Data down al pedir quote | `{ ticker, reason, lastError }` |
 
 ### 9.2 Notificaciones
 
@@ -876,24 +876,24 @@ Todas se envían vía el `notificationChannel` configurado por el usuario en HU-
 |---|---|---|
 | `ORDER_EXECUTED` | `order-executed-buy.html` | "Tu orden de compra de {quantity} {ticker} se ejecutó a USD {executionUnitPrice}. Total descontado: USD {executionTotal} (incluye comisión USD {commission}). Tu saldo actual: USD {newBalance}." |
 | `ORDER_REJECTED` (Alpaca) | `order-rejected-buy.html` | "Tu orden de compra de {quantity} {ticker} fue rechazada por el mercado: {alpacaReason}. No se realizó ningún cargo." |
-| `ORDER_FAILED` (Alpaca/Polygon down) | `order-failed-buy.html` | "Tu orden de compra de {quantity} {ticker} no pudo procesarse por un error técnico. Intenta nuevamente en unos minutos. Tu saldo no fue afectado." |
+| `ORDER_FAILED` (Alpaca trading/data down) | `order-failed-buy.html` | "Tu orden de compra de {quantity} {ticker} no pudo procesarse por un error técnico. Intenta nuevamente en unos minutos. Tu saldo no fue afectado." |
 
 > **Decisión:** las notificaciones de `ORDER_REJECTED` por `INSUFFICIENT_FUNDS` **no envían email**. La razón: el usuario ya vio el error en pantalla en el momento (response 409). Email sería ruido. Solo enviar email cuando el flujo es asíncrono o cuando hay desconexión espacio-temporal entre la causa y la consecuencia (Alpaca rechaza ≠ fondos insuficientes — el primero llega después de submit, el segundo bloquea el submit).
 
 ### 9.3 Cambios en caché Redis
 
-No aplica en HU-F09. (HU-F18 introducirá `PriceCache` para los 25 tickers con TTL 30s; HU-F09 consulta Polygon directamente para cada quote/orden.)
+No aplica en HU-F09. (HU-F18 introducirá `PriceCache` para los 25 tickers con TTL 30s; HU-F09 consulta Alpaca Data directamente para cada quote/orden.)
 
 ### 9.4 Llamadas a APIs externas
 
 | API externa | Método (operación) | Adapter | Cuándo se invoca |
 |---|---|---|---|
-| Polygon.io | `GET /v2/snapshot/locale/us/markets/stocks/tickers/{ticker}` | `MarketDataAdapter` | Cada `POST /orders/quote` y cada `POST /orders` (re-fetch fresco antes de ejecutar) |
+| Alpaca Market Data | `GET /v2/stocks/{ticker}/quotes/latest` | `MarketDataAdapter` | Cada `POST /orders/quote` y cada `POST /orders` (re-fetch fresco antes de ejecutar) |
 | Alpaca Markets (paper) | `POST /v2/orders` | `AlpacaAdapter` | Cada `POST /orders` exitoso (post-validaciones) |
 
 **RetryPolicy:**
 
-- `polygonApi`: 3 reintentos a 1s, 3s, 5s. Si las 3 fallan, propaga `MarketDataUnavailableException`.
+- `alpacaDataApi`: 3 reintentos a 1s, 3s, 5s. Si las 3 fallan, propaga `MarketDataUnavailableException`.
 - `alpacaApi`: 3 reintentos a 1s, 3s, 5s. Si las 3 fallan, la orden queda en `status=FAILED`.
 
 **Idempotency hacia Alpaca:** el `client_order_id` se envía en el body — Alpaca lo respeta como key de deduplicación nativa.
@@ -915,7 +915,7 @@ No aplica en HU-F09. (HU-F18 introducirá `PriceCache` para los 25 tickers con T
 
 | Constraint | Medida | Cómo se verifica |
 |---|---|---|
-| `POST /orders/quote` responde en <2s p95 (Polygon free tier) | 20 requests serializadas en localhost | `time curl` o JMeter mini |
+| `POST /orders/quote` responde en <2s p95 (Alpaca Data free tier) | 20 requests serializadas en localhost | `time curl` o JMeter mini |
 | `POST /orders` responde en <5s p95 incluyendo Alpaca paper | 20 requests serializadas con saldo suficiente | `time curl` o JMeter |
 | `BigDecimal` usado para todo monto financiero (CLAUDE.md regla #9) | Inspección de código | Grep por `double`/`float` en módulo trading/portfolio — debe estar vacío para monetario |
 | Comisión calculada con `HALF_UP` y 2 decimales | Test unitario | Cases: 1000.001 × 0.02 = 20.00 (no 20.0000200) |
@@ -945,7 +945,7 @@ Funcionalidad: Orden de compra Market
     Y la tasa de comisión INVESTOR está en 0.02 (2%) en config.commission_rates
     Y MarketScheduleManager.isOpenNow(*) devuelve true (stub MVP)
     Y Alpaca paper trading account tiene buying_power > 1,000,000
-    Y Polygon devuelve precio 184.50 para AAPL al consultar snapshot
+    Y Alpaca Data devuelve precio 184.50 para AAPL al consultar el latest-quote
 
   Escenario: Quote informativo de compra con saldo suficiente
     Cuando el usuario envía POST /api/v1/orders/quote con { ticker: "AAPL", side: "BUY", quantity: 10 }
@@ -1020,8 +1020,8 @@ Funcionalidad: Orden de compra Market
     Y app.orders tiene status="REJECTED", error_code="ALPACA_ORDER_REJECTED"
     Y app.user_balances NO se modificó
 
-  Escenario: Polygon caído al pedir quote
-    Dado que Polygon devuelve 503 a las 3 llamadas
+  Escenario: Alpaca Data caído al pedir quote
+    Dado que Alpaca Data devuelve 503 a las 3 llamadas
     Cuando el usuario envía POST /api/v1/orders/quote
     Entonces el sistema responde 502 con código MARKET_DATA_UNAVAILABLE
 
@@ -1067,7 +1067,7 @@ Funcionalidad: Orden de compra Market
 | E5: Saldo insuficiente rechaza la orden sin descuento | "Saldo insuficiente al ejecutar" |
 | E6: Alpaca down causa FAILED sin descuento de saldo | "Alpaca caída post-retries" |
 | E7: Alpaca rechaza explícitamente → REJECTED sin descuento | "Alpaca rechaza la orden" |
-| E8: Polygon down → quote falla con error claro | "Polygon caído al pedir quote" |
+| E8: Alpaca Data down → quote falla con error claro | "Alpaca Data caído al pedir quote" |
 | E9: Validación de ticker, quantity, side | "Ticker no permitido", "Validación de quantity" |
 | E10: Cuenta no activa → bloqueada | "Usuario con cuenta SUSPENDED" |
 | E11: Concurrencia preserva invariante de saldo no-negativo | "Concurrencia — dos órdenes simultáneas que juntas exceden saldo" |
@@ -1099,7 +1099,7 @@ Funcionalidad: Orden de compra Market
 3. Al presionar "Obtener quote":
    - Frontend muestra spinner mientras hace `POST /orders/quote`.
    - Al recibir 200: renderiza `OrderQuotePanel` con la tabla de precio + comisión + total + saldo después.
-   - Al recibir 502 (Polygon down): muestra "No se pudo obtener el precio. Intenta de nuevo." y resetea el form.
+   - Al recibir 502 (Alpaca Data down): muestra "No se pudo obtener el precio. Intenta de nuevo." y resetea el form.
 4. Si `sufficientFunds=true && marketOpen=true`, el botón "Confirmar compra" se habilita.
 5. Al presionar "Confirmar compra":
    - Frontend genera `clientOrderId = crypto.randomUUID()`.
@@ -1244,7 +1244,7 @@ ORDER_DUPLICATE_NOT_AN_ERROR: "Tu orden ya estaba registrada.",
 > **Importante:** estas son las decisiones que el SPEC **deja explícitamente para el `plan.md`**. No bloquean redacción; sí requieren resolución antes del Lote A.
 
 1. **D-CONC** — ¿Materializar TradingService `PriorityQueue` + `ThreadPool` en MVP o diferir? Recomendación SPEC: diferir. Responder en `plan.md`.
-2. **D-MD-CACHE** — ¿Introducir `PriceCache` (Redis, TTL 30s) parcialmente en HU-F09 o esperar HU-F18? Recomendación SPEC: esperar HU-F18. Para MVP single-user, Polygon free tier es suficiente sin cache.
+2. **D-MD-CACHE** — ¿Introducir `PriceCache` (Redis, TTL 30s) parcialmente en HU-F09 o esperar HU-F18? Recomendación SPEC: esperar HU-F18. Para MVP single-user, el free tier de Alpaca Data es suficiente sin cache.
 3. **D-SLIPPAGE** — ¿Implementar slippage tolerance (rechazar si `executionUnitPrice > quotedUnitPrice × 1.02`)? Recomendación SPEC: NO en MVP. Documentar como deuda.
 4. **D-ORDER-LOG-TRANSITIONS** — ¿Tabla `app.order_state_transitions` o solo ES? Recomendación SPEC: solo ES (AuditService).
 5. **D-ALPACA-CLIENT** — ¿SDK no-oficial `alpaca-java` o `RestClient` de Spring? Recomendación SPEC: `RestClient`. Razones: (a) STACK.md no lista `alpaca-java`; (b) un menos adopt-and-abandon-risk; (c) WireMock estabiliza tests sin importar SDK; (d) operaciones que necesitamos son 2-3 endpoints. Responder en `plan.md`.

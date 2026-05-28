@@ -47,7 +47,7 @@ Es la primera integración real con API externa del MVP y la única del Sprint 1
 
 - **HU-F02 + HU-F03** — el usuario debe estar autenticado para iniciar checkout
 - **HU-F04 + HU-F20** — el `notificationChannel` se respeta para emails de suscripción
-- **Día 0 (Bootstrap)** — Stripe CLI configurado para forwarding de webhooks locales (`stripe listen`); variables `STRIPE_SECRET_KEY`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `STRIPE_WEBHOOK_SECRET` configuradas
+- **Día 0 (Bootstrap)** — Stripe CLI configurado para forwarding de webhooks locales (`stripe listen`); variables `STRIPE_API_KEY`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `STRIPE_WEBHOOK_SECRET` configuradas
 
 ### Features que dependen de esta
 
@@ -1081,7 +1081,7 @@ Ninguna. Todas las decisiones críticas resueltas previo a la redacción de esta
 - ☐ Todos los 11+ event types de §9.1 verificables en Kibana
 - ☐ `stripe_customer_id` NO aparece en respuestas API (verificable por inspección y test)
 - ☐ `stripe-cli` configurado y documentado en README.md para forwarding local de webhooks
-- ☐ Variables de entorno documentadas en `.env.example`: `STRIPE_SECRET_KEY`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `STRIPE_WEBHOOK_SECRET`
+- ☐ Variables de entorno documentadas en `.env.example`: `STRIPE_API_KEY`, `STRIPE_PRICE_MONTHLY`, `STRIPE_PRICE_YEARLY`, `STRIPE_WEBHOOK_SECRET`
 - ☐ Endpoint `/api/v1/webhooks/stripe` está excluido de Spring Security JWT filter y CSRF (verificable inspeccionando la configuración)
 
 ---

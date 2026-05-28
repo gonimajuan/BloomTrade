@@ -24,7 +24,7 @@ Este archivo se complementa con:
 | Logging stack | ElasticSearch + Kibana | 8.x | Auditoría centralizada inmutable |
 | Mensajería de logs | Logstash | 8.x | Pipeline de ingesta hacia ES |
 | API de ejecución | Alpaca Markets | v2 (paper trading) | Requerido por arquitectura |
-| API de market data | Polygon.io | v3 (free tier) | Endpoint de snapshots + adapter intercambiable |
+| API de market data | Alpaca Market Data | v2 (incluida en cuenta paper) | Mismas credenciales que ejecución; adapter intercambiable. Polygon.io diferido a post-MVP (§7.2.1) |
 | Pasarela de pago | Stripe | 2024-x (test mode) | Requerido por arquitectura |
 | SMS / WhatsApp | Twilio | API actual | Soporta ambos canales con una integración |
 | Email (dev) | MailHog | 1.0.x | Captura local, sin signup, UI web en :8025 |
@@ -426,9 +426,8 @@ Variables obligatorias:
 POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
 REDIS_PASSWORD
 JWT_SECRET (mínimo 256 bits)
-ALPACA_API_KEY, ALPACA_API_SECRET
-POLYGON_API_KEY
-STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
+ALPACA_API_KEY, ALPACA_API_SECRET, ALPACA_BASE_URL, ALPACA_DATA_BASE_URL
+STRIPE_API_KEY (Restricted Key, prefijo rk_), STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_MONTHLY, STRIPE_PRICE_YEARLY
 TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER
 EMAIL_PROVIDER (mailhog|sendgrid)
 SENDGRID_API_KEY (solo si provider=sendgrid)
@@ -490,7 +489,7 @@ Estas decisiones se documentan aquí para que cuando aparezcan no haya improvisa
 | Decisión | Cuándo retomarla |
 |---|---|
 | Autenticación con TOTP / Authenticator | Post-MVP, si hay tiempo |
-| Sustitución de Polygon por Alpaca Market Data | Si free tier de Polygon se queda corto en demo |
+| Reintroducir Polygon.io como proveedor alterno de market data | Si Alpaca Market Data se queda corto en post-MVP |
 | Migración de Docker Compose a Kubernetes | Fuera del alcance del curso |
 | WebSockets para precios real-time | Post-MVP |
 | Internacionalización (i18n) | Post-MVP — todo en español por ahora |
@@ -510,3 +509,4 @@ Este archivo se actualiza vía PR como cualquier código. Cada cambio significat
 | 2026-05-19 | §2.2: + `spring-boot-starter-mail`, `spring-boot-starter-thymeleaf`. §3.2: + `@hookform/resolvers`. | Requeridas por HU-F01: email de bienvenida vía MailHog con plantilla Thymeleaf, y resolver zod en el formulario de registro. Aprobadas por el humano. refs specs/HU-F01-registrarse/SPEC.md |
 | 2026-05-22 | §7.2 reescrita: Alpaca Market Data como proveedor único de market data en MVP. Polygon.io movido a §7.2.1 como diferido a post-MVP. | D9 D-MD-PROVIDER (`specs/HU-F09-orden-compra-market/plan.md`): reportes de degradación reciente en Polygon free tier + Alpaca paper account ya incluye market data sin creds adicionales. Reduce 1 dependencia externa y reusa creds + adapter pattern. Pre-aprobada por el humano en cuestionario de plan. refs specs/HU-F09-orden-compra-market/SPEC.md |
 | 2026-05-27 | §3.2: + `framer-motion`, `sonner`, `@fontsource-variable/space-grotesk`, `clsx`, `tailwind-merge`. | Revamp UI (post-MVP, no es HU formal): glassmorphism + violet accent + Space Grotesk + animaciones premium. `sonner` reemplaza `window.alert/confirm` del HU-F15 D35. Bundle delta ~80kb gz. Plan completo en `docs/ui-revamp/PLAN.md`. Aprobado por el humano. |
+| 2026-05-27 | §1 (tabla resumen): market data = Alpaca Market Data, Polygon.io diferido a post-MVP. §10.3: variables alineadas con `.env.example` y `application.yml` — Alpaca con `ALPACA_BASE_URL` + `ALPACA_DATA_BASE_URL`; Stripe pasa a `STRIPE_API_KEY` (Restricted Key `rk_`) + `STRIPE_PRICE_MONTHLY`/`STRIPE_PRICE_YEARLY`; eliminada `POLYGON_API_KEY`. §13: decisión diferida reformulada (reintroducir Polygon como alterno). | Coherencia con D9 D-MD-PROVIDER (ya reflejado en §7.2 desde 2026-05-22) y con los nombres de variables que el código realmente lee. |
