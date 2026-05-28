@@ -7,24 +7,22 @@ interface Props {
 }
 
 /**
- * Banner condicional según `marketDataAvailable` (SPEC §12.1 + plan D3):
- *  - "true": no renderiza nada.
- *  - "partial": banner naranja (algunos precios faltan, marcados con "—").
- *  - "false": banner amarillo (sin precios actuales, solo costo promedio).
+ * Banner condicional según `marketDataAvailable` (SPEC §12.1 + plan D3).
+ * Revamp Lote D: glass dark tints amber para ambos casos (partial menos intenso).
  */
 export function MarketDataBanner({ status }: Props) {
   if (status === 'true') return null;
   const isPartial = status === 'partial';
   const palette = isPartial
-    ? 'border-orange-300 bg-orange-50 text-orange-900'
-    : 'border-amber-300 bg-amber-50 text-amber-900';
+    ? 'border-amber-500/25 bg-amber-500/10 text-amber-200'
+    : 'border-amber-500/40 bg-amber-500/15 text-amber-100';
   const text = isPartial
     ? portfolioMessages.marketDataPartial
     : portfolioMessages.marketDataDown;
   return (
     <div
       role="status"
-      className={`flex items-start gap-2 rounded-md border px-4 py-3 text-sm ${palette}`}
+      className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm backdrop-blur-sm ${palette}`}
     >
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
       <p>{text}</p>

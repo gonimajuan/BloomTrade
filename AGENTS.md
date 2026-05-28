@@ -24,15 +24,66 @@
 
 | Campo | Valor |
 |---|---|
-| Branch | `feat/HU-F15-cancelar-orden`. **Lotes A–F implementados, listo para HITO 6** (commit + push + PR firmado por humano). Working tree con backend + frontend + 3 docs SDD + APRENDIZAJES Día 11 + AGENTS handoff (este bloque). Mensaje commit preparado en `C:\Users\juang\AppData\Local\Temp\bt-hu-f15.txt`. |
-| HU activa | **HU-F15 Cancelar orden Market — cerrada técnicamente.** Sprint 2 funcional + MVP completo + bonus F17 + F15 ✅. **Próxima sesión separada:** revamp UI completo con `frontend-design` skill (no formal HU — pulido visual general del producto previo a evaluación in-vivo). |
-| Sprint | 2 funcional cerrado + Día 10 doc/infra cerrado + Día 11 F15 cerrado. **NINGUNA HU MVP pendiente.** Próximo Sprint conceptual = revamp UI. **Estado tests:** backend `mvn verify` 410 (332 unit + 78 IT) verdes, frontend vitest 27/27 + build 3377 módulos. **Smoke E2E manual HITO 5 pendiente** (plan documentado en sesión actual). |
-| Próximo paso | **HITO 6**: humano firma `git add -A && git commit -F C:\Users\juang\AppData\Local\Temp\bt-hu-f15.txt && git push -u origin feat/HU-F15-cancelar-orden && gh pr create` → squash a `main`. **Smoke E2E manual recomendado pre-merge** (no bloqueante, plan en sesión actual): /portfolio → click "Cancelar" en BUY queued → confirm dialog → window.alert "Orden cancelada — USD X restaurados" → balance actualiza + email MailHog + Alpaca dashboard `canceled`. Tras merge: arrancar **revamp UI** en sesión separada con `frontend-design` skill. |
+| Branch | `feat/revamp-ui`. **Lotes A–F implementados, listo para HITO 6** (commit + push + PR firmado por humano). Working tree con 40 archivos frontend modificados + 8 archivos nuevos (5 primitives ui/ + GlassBackground + cn.ts + tests) + 1 borrado (OrderConfirmationToast — migrado a sonner) + STACK.md + docs/ui-revamp/PLAN.md + APRENDIZAJES Día 12. Mensaje commit preparado en `C:\Users\juang\AppData\Local\Temp\bt-revamp-ui.txt`. |
+| HU activa | **Revamp UI — cerrado técnicamente.** NO es HU formal (sin SPEC). Glassmorphism + violet accent + Space Grotesk + framer-motion + sonner. 6 primitives nuevos (Card, Button, Badge, Input, Modal, UserDropdown). 5 deps agregadas a STACK.md §3.2. Las 9 HUs MVP + F17 + F15 ya estaban cerradas — esta sesión es pulido visual previo a demo in-vivo. |
+| Sprint | 2 funcional cerrado + Día 10 doc/infra cerrado + Día 11 F15 cerrado + Día 12 revamp UI cerrado. **NINGUNA HU pendiente.** **Estado tests:** backend `mvn verify` 410 (332 unit + 78 IT) intacto (cero cambios backend), frontend vitest **42/42** verde (+15 nuevos para primitives) + build **3787 módulos** (+410 vs baseline). Bundle JS 1024kb / **303kb gz** (+62kb gz vs pre-revamp, dentro del estimado +80kb). |
+| Próximo paso | **HITO 6**: humano firma `git add -A && git commit -F C:\Users\juang\AppData\Local\Temp\bt-revamp-ui.txt && git push -u origin feat/revamp-ui && gh pr create` → squash a `main`. **Smoke visual manual recomendado pre-merge** (no bloqueante): `docker compose up -d --build` → recorrer las 6 pantallas autenticadas + login flow + cancel order con sonner toast. Tras merge: el MVP visual queda cerrado, listo para demo in-vivo. |
 | Deuda viva (NO bloqueante) | ~~(1) Mini-HU `HU-F0X-token-rotation-logout`~~ **CERRADA Día 10 checkpoint 1**. (2) Tests IT webhooks Stripe con WireMock. (3) `ARCHITECTURE.md` §5 interfaces con prefijo `I`. (4) `useBlocker` requires DataRouter migration. (5) Generación auto de `frontend/constants/tickers.ts` desde OpenAPI. (6) `JWT_REFRESH_SECRET` eliminado de `.env.example`. ~~(7) JMeter ESC-R1+ESC-R2~~ **DIFERIDA post-MVP**. ~~(8) Reconciliation Alpaca-paper vs BD~~ **CERRADA Día 10 checkpoint 2**. (9) `clientOrderLocks` ConcurrentHashMap crece monotónico (D25 F09). (10) Polygon.io como alterno de market data (post-MVP). (11) **D28 F09 hardening**: check `ALPACA_BASE_URL` terminado en `/v2`. (12) **D29 F09 hardening**: ya implementado HU-F16 `pendingOrders[]`. ~~(13) HU-F09 orden encolada drift~~ **CERRADA Día 10 checkpoint 2**. (14) **HU-F10 D17 hardening (post-MVP)**: lock canónico `balances→positions` serializa SELLs concurrentes. ~~(15) HU-F10 D10~~ **CERRADA HU-F18 Lote E**. ~~(16) Dead code `sideNotYetImplemented`~~ **CERRADA HU-F18 Lote E**. ~~(17) HU-F16 D17 403 vs 401 sin JWT~~ **CERRADA Día 10 checkpoint 1**. (18) **HU-F16 D2 PERF**: `MarketDataAdapter` retry interno con backoff. ~~(19) Cache de market data~~ **CERRADA HU-F18 Lote A**. (20) **D-SPARKLINE-CACHE V2**. (21) **D-CACHE-STALE-ON-ERROR V2**. (22) **D-REDIS-HEALTH-BANNER**. (23) **D-ORDERS-UI-FILTERS-POSTMVP**. (24) **D-EQUITY-HISTORY-POSTMVP**. (25) **D-TOP-MOVERS-POSTMVP**. (26) **D-METRICS-CACHE-HIT-RATIO**. ~~(27) HU-F17 D-CANCELLED-STATUS-POSTMVP~~ **CERRADA HU-F15 Lote A** (OrderStatus extendido a 6 valores + V6). (28) **P1-4 audit Día 10**: validación server-side `max-quantity-per-order`. (29) **P2-x audit Día 10 pendientes**: `.env.example` cleanup (=#6), hook condicional OrderForm, centralizar formatters moneda. ~~(30) Reconciliation reversal canceled/rejected/expired~~ **CERRADA HU-F15 Lote C** (OrderReconciliationService v2). (31) **Pre-test health-check postgres test :5433** sigue post-MVP. (32) **NUEVO HU-F15 D27**: records con muchos campos rompen call sites positional; considerar factory methods nominales. (33) **NUEVO HU-F15 D35 — D-NO-TOAST-SYSTEM-FRONTEND**: frontend usa `window.alert` + `window.confirm` para feedback de cancel; reemplazar por toast global (`react-hot-toast` o `sonner`) en revamp UI post-F15. (34) **NUEVO HU-F15 D26 follow-up**: agregar columna `alpaca_canceled_at` (V7 futura) si emerge necesidad de distinguir "Alpaca confirmó" vs "BloomTrade transicionó". |
 
 ---
 
-## Cómo continuar (post HU-F15 → revamp UI con frontend-design)
+## Cómo continuar (post revamp UI → smoke visual + demo in-vivo)
+
+**Estado actual (2026-05-27, cierre revamp UI técnico):**
+
+- **Branch `feat/revamp-ui`** lista para HITO 6 (commit firmado por humano + push + PR).
+- **Tests verdes:** backend `mvn verify` **410 intacto** (cero cambios backend — validación pasiva de arquitectura modular). Frontend vitest **42/42** verde (+15 nuevos: 4 Card + 7 Button + 4 Badge) + build **3787 módulos** (-1 borrado OrderConfirmationToast + nuevos primitives) · JS 1024kb / **303kb gz** (+62kb gz desde framer-motion + sonner + fontsource).
+- **5 deps nuevas en STACK.md §3.2** + entrada de historial §14: `framer-motion` `sonner` `@fontsource-variable/space-grotesk` `clsx` `tailwind-merge`.
+- **6 decisiones emergentes** documentadas en `docs/ui-revamp/PLAN.md` §9 (D1–D6). Notable: D3 (borrar OrderConfirmationToast.tsx 180 LOC reemplazado por sonner inline), D4/D5 (segmented pills pattern con `sr-only` inputs reusado 3 veces).
+- **APRENDIZAJES.md sección "Día 12 — Revamp UI"** con 8 reflexiones técnicas + meta (SDD vs revamp visual, glassmorphism como decisión arquitectónica, lotes como unidad de validación, borrar > refactorear, segmented pills pattern emergente, tipografía como ROI alto, twMerge para primitives, 0 backend changes como validación pasiva).
+
+**Lo primero del humano (HITO 6 pre-merge):**
+
+1. **Smoke visual manual recomendado** (~15 min, no bloqueante):
+   ```powershell
+   docker compose up -d --build frontend
+   # abrir http://localhost en navegador
+   ```
+   - **Login flow:** ir a `/login` → ver `❖ BloomTrade` hero violet + Card glass-elevated con orbes drifting detrás · login con MFA → ver MFAVerifyPage con mismo chrome.
+   - **AppHeader:** sticky glass + pill active state en navegación + avatar dropdown con iniciales `JG` y badge del rol.
+   - **Dashboard:** EquityCard hero glass + grid 5×5 mercados con pills violet · click en ticker → SparklinePanel grande aparece abajo con tooltip glass dark · RecentOrdersWidget con Badge variants para status.
+   - **Portfolio:** BalanceCard glass + PositionsTable dark con hover violet · PendingOrders panel con Badge warning · Cancel button → Modal glass + sonner toast top-right (cierra deuda viva #33 D35).
+   - **Trade:** OrderForm con BUY/SELL pills emerald/rose · request quote → panel desliza desde derecha (AnimatePresence) · confirm → toast sonner top-right (success/info).
+   - **Profile:** 3 Cards glass stagger entry · canal de notif como pills violet · tickers de interés como pills glass clickeables.
+   - **Premium:** Plan Anual destacado con shadow-glow-violet + Badge "Más popular".
+
+2. **Commit + push + PR**:
+   ```powershell
+   git add -A
+   git commit -F C:\Users\juang\AppData\Local\Temp\bt-revamp-ui.txt
+   git push -u origin feat/revamp-ui
+   gh pr create  # o desde GitHub
+   ```
+   Squash and merge a `main`.
+
+**Próxima sesión (post-merge): MVP visual cerrado, listo para demo in-vivo**
+
+No quedan HUs ni revamps pendientes. El proyecto está en estado **demo-ready**:
+
+- **Backend**: MVP funcional cerrado (9 HUs §2.1 + F17 + F15). `mvn verify` 410 verde.
+- **Frontend**: revamp visual completo, dark glass + violet accent + framer animations.
+- **Docs SDD**: 7 specs/HU-FXX/{SPEC,plan,tasks}.md + docs/ui-revamp/PLAN.md.
+- **APRENDIZAJES.md**: 12 días de reflexiones (~80 bullets técnicos).
+- **AGENTS.md**: handoff vivo, este bloque + 6 históricos.
+
+**Trabajo opcional post-MVP** (en orden ROI):
+- Deudas vivas remanentes (ver tabla "Trabajo activo"): #2 IT Stripe webhooks · #4 useBlocker migration · #6 .env.example cleanup · #9 clientOrderLocks GC · #14 lock canónico balances→positions PERF · #18 retry adapter con backoff · #20-#26 D-XXX-POSTMVP markers.
+- Si el profesor pide pulir UX adicional: pages restantes (los OTPInput/Countdown/ResendButton internos del MFAVerifyPage quedaron sin refactor — ver Lote C).
+- Si SonarCloud queda flagueando: revisar warnings nuevos del revamp (esperado: ninguno crítico).
+
+---
+
+## Cómo continuar (post HU-F15 → revamp UI con frontend-design) [HISTÓRICO — completado en sesión 2026-05-27]
 
 **Estado actual (2026-05-27, cierre HU-F15 técnico):**
 

@@ -1,4 +1,5 @@
 import { TrendingDown, TrendingUp } from 'lucide-react';
+import { cn } from '@/lib/cn';
 import type { TickerDashboardDto } from '@/types/api';
 
 const currencyFmt = new Intl.NumberFormat('es-CO', {
@@ -19,9 +20,8 @@ interface Props {
 }
 
 /**
- * Fila clickeable de un ticker en el grid del dashboard (Día 10 polish).
- * El sparkline mini se eliminó: ahora cada fila es un botón que selecciona el ticker
- * y la gráfica grande se muestra en {@link SparklinePanel} debajo del grid.
+ * Fila clickeable de un ticker en el grid del dashboard.
+ * Revamp Lote D: dark glass + selected state violet glow.
  */
 export function TickerRow({ item, selected, onSelect }: Props) {
   const pct = item.dayChangePct !== null ? Number.parseFloat(item.dayChangePct) : null;
@@ -29,12 +29,12 @@ export function TickerRow({ item, selected, onSelect }: Props) {
   const negative = pct !== null && pct < 0;
   const colorClass =
     pct === null
-      ? 'text-slate-400'
+      ? 'text-slate-500'
       : positive
-        ? 'text-emerald-600'
+        ? 'text-emerald-400'
         : negative
-          ? 'text-rose-600'
-          : 'text-slate-500';
+          ? 'text-rose-400'
+          : 'text-slate-400';
   const Icon = positive ? TrendingUp : negative ? TrendingDown : null;
 
   const priceDisplay =
@@ -49,26 +49,34 @@ export function TickerRow({ item, selected, onSelect }: Props) {
       type="button"
       onClick={() => onSelect(item.ticker)}
       aria-pressed={selected}
-      className={`grid w-full grid-cols-[60px_minmax(0,1fr)_70px] items-center gap-2 rounded px-2 py-1.5 text-sm transition ${
+      className={cn(
+        'grid w-full grid-cols-[60px_minmax(0,1fr)_70px] items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-all',
         selected
-          ? 'bg-slate-900 text-white hover:bg-slate-800'
-          : 'hover:bg-slate-100'
-      }`}
+          ? 'bg-violet-500/15 text-white shadow-glow-violet-sm'
+          : 'text-slate-300 hover:bg-white/5 hover:text-white',
+      )}
     >
       <span
-        className={`font-mono font-semibold ${selected ? 'text-white' : 'text-slate-900'}`}
+        className={cn(
+          'font-mono font-semibold',
+          selected ? 'text-violet-200' : 'text-white',
+        )}
       >
         {item.ticker}
       </span>
       <span
-        className={`truncate text-right ${selected ? 'text-slate-100' : 'text-slate-700'}`}
+        className={cn(
+          'truncate text-right tabular-nums',
+          selected ? 'text-slate-100' : 'text-slate-300',
+        )}
       >
         {priceDisplay}
       </span>
       <span
-        className={`flex items-center justify-end gap-1 font-medium ${
-          selected ? 'text-white' : colorClass
-        }`}
+        className={cn(
+          'flex items-center justify-end gap-1 font-medium tabular-nums',
+          selected ? 'text-slate-100' : colorClass,
+        )}
       >
         {Icon && <Icon className="h-3 w-3" aria-hidden="true" />}
         <span>{pctDisplay}</span>

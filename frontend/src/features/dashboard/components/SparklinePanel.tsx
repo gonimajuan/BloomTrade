@@ -7,6 +7,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { Card } from '@/components/ui/Card';
 import type { TickerDashboardDto } from '@/types/api';
 
 interface Props {
@@ -26,24 +27,20 @@ const percentFmt = new Intl.NumberFormat('es-CO', {
 
 /**
  * Panel grande con la gráfica intradía del ticker seleccionado en el grid.
- * Reemplaza el sparkline mini por fila (HU-F18 Día 10 polish — user request: revamp UI
- * vendrá después con Claude Design).
- *
- * <p>Estados:
- * <ul>
- *   <li>{@code ticker === null}: placeholder "Selecciona un ticker".</li>
- *   <li>{@code sparkline.length === 0}: header + mensaje "Sin datos".</li>
- *   <li>resto: chart recharts con tooltip + eje Y + cartesian grid.</li>
- * </ul>
+ * Revamp Lote D: Card glass-elevated + recharts tunneado para dark theme
+ * (grid white/8, tooltip glass dark, líneas emerald/rose-400).
  */
 export function SparklinePanel({ ticker }: Props) {
   if (ticker === null) {
     return (
-      <section className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
-        <p className="text-sm text-slate-500">
+      <Card
+        variant="glass-outline"
+        className="border-dashed p-10 text-center"
+      >
+        <p className="text-sm text-slate-400">
           Selecciona un ticker del grid para ver su gráfica.
         </p>
-      </section>
+      </Card>
     );
   }
 
@@ -52,15 +49,15 @@ export function SparklinePanel({ ticker }: Props) {
   const positive = pct !== null && pct > 0;
   const negative = pct !== null && pct < 0;
   const stroke = positive
-    ? 'rgb(5 150 105)' // emerald-600
+    ? 'rgb(52 211 153)' // emerald-400
     : negative
-      ? 'rgb(225 29 72)' // rose-600
-      : 'rgb(100 116 139)'; // slate-500
+      ? 'rgb(251 113 133)' // rose-400
+      : 'rgb(148 163 184)'; // slate-400
   const priceColor = positive
-    ? 'text-emerald-600'
+    ? 'text-emerald-400'
     : negative
-      ? 'text-rose-600'
-      : 'text-slate-500';
+      ? 'text-rose-400'
+      : 'text-slate-400';
 
   const points = ticker.sparkline.map((d, idx) => ({
     idx,
@@ -75,22 +72,28 @@ export function SparklinePanel({ ticker }: Props) {
     pct !== null ? `${pct > 0 ? '+' : ''}${percentFmt.format(pct)}%` : '—';
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-      <header className="mb-4 flex items-baseline justify-between">
+    <Card variant="glass-elevated" className="p-6">
+      <header className="mb-5 flex items-baseline justify-between">
         <div>
-          <h2 className="font-mono text-xl font-bold text-slate-900">
+          <h2 className="font-mono text-xl font-bold tracking-tight text-white">
             {ticker.ticker}
           </h2>
-          <p className="text-xs text-slate-500">Variación reciente — barras de 15 min</p>
+          <p className="mt-0.5 text-xs text-slate-400">
+            Variación reciente — barras de 15 min
+          </p>
         </div>
         <div className="text-right">
-          <p className="text-2xl font-semibold text-slate-900">{priceDisplay}</p>
-          <p className={`text-sm font-medium ${priceColor}`}>{pctDisplay}</p>
+          <p className="text-2xl font-semibold tabular-nums text-white">
+            {priceDisplay}
+          </p>
+          <p className={`text-sm font-medium tabular-nums ${priceColor}`}>
+            {pctDisplay}
+          </p>
         </div>
       </header>
 
       {points.length === 0 ? (
-        <div className="flex h-[260px] items-center justify-center text-sm text-slate-400">
+        <div className="flex h-[260px] items-center justify-center text-sm text-slate-500">
           Sin datos intradía para este ticker.
         </div>
       ) : (
@@ -100,7 +103,10 @@ export function SparklinePanel({ ticker }: Props) {
               data={points}
               margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="rgb(226 232 240)" />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="rgb(255 255 255 / 0.08)"
+              />
               <XAxis dataKey="idx" hide />
               <YAxis
                 domain={['auto', 'auto']}
@@ -110,16 +116,17 @@ export function SparklinePanel({ ticker }: Props) {
                 width={56}
               />
               <Tooltip
-                formatter={(value: number) => [
-                  currencyFmt.format(value),
-                  'Close',
-                ]}
+                formatter={(value: number) => [currencyFmt.format(value), 'Close']}
                 labelFormatter={(idx: number) => `Barra ${idx + 1}`}
                 contentStyle={{
-                  borderRadius: 6,
-                  border: '1px solid rgb(226 232 240)',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255 255 255 / 0.15)',
+                  background: 'rgba(15 23 42 / 0.95)',
+                  backdropFilter: 'blur(12px)',
                   fontSize: 12,
                 }}
+                itemStyle={{ color: 'rgb(241 245 249)' }}
+                labelStyle={{ color: 'rgb(148 163 184)' }}
               />
               <Line
                 type="monotone"
@@ -133,6 +140,6 @@ export function SparklinePanel({ ticker }: Props) {
           </ResponsiveContainer>
         </div>
       )}
-    </section>
+    </Card>
   );
 }

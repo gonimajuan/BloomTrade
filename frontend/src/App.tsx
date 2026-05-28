@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { GlassBackground } from './components/GlassBackground';
 import { RegisterPage } from './pages/RegisterPage';
 import { TermsPage } from './pages/TermsPage';
 import { LoginPage } from './pages/LoginPage';
@@ -16,7 +17,8 @@ import { useAuth } from './features/auth/context/AuthContext';
 function App() {
   const { isAuthenticated } = useAuth();
   return (
-    <Routes>
+    <GlassBackground>
+      <Routes>
       <Route
         path="/"
         element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />}
@@ -85,7 +87,8 @@ function App() {
         path="*"
         element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />}
       />
-    </Routes>
+      </Routes>
+    </GlassBackground>
   );
 }
 

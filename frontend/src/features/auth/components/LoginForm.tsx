@@ -5,17 +5,13 @@ import { useNavigate } from 'react-router-dom';
 import { useLogin } from '../hooks/useLogin';
 import { loginSchema, type LoginFormValues } from '../schemas/login';
 import { humanFor } from '@/lib/messages.es';
-
-const INPUT =
-  'w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none disabled:opacity-50';
-const LABEL = 'block text-sm text-slate-300';
-const ERR = 'mt-1 text-xs text-red-400';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 
 /**
  * Formulario de paso 1 del flujo MFA (spec HU-F02 §12.1). Al hacer submit dispara
  * {@code useLogin}; en success navega a {@code /mfa-verify} con el {@code tempSessionId} y el
- * email en {@code location.state} para que la página de MFA tenga el contexto sin tener que
- * persistirlo en otra capa.
+ * email en {@code location.state}.
  */
 export function LoginForm() {
   const navigate = useNavigate();
@@ -52,47 +48,56 @@ export function LoginForm() {
       {mutation.error && (
         <div
           role="alert"
-          className="rounded-md border border-red-700 bg-red-900/40 px-4 py-2 text-sm text-red-200"
+          className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
         >
           {mutation.error.message}
         </div>
       )}
 
       <div>
-        <label className={LABEL} htmlFor="email">Email</label>
-        <input
+        <label className="mb-1.5 block text-sm font-medium text-slate-300" htmlFor="email">
+          Email
+        </label>
+        <Input
           id="email"
-          className={INPUT}
           type="email"
           autoComplete="email"
+          isInvalid={!!errors.email}
           {...register('email')}
         />
         {errors.email && (
-          <p className={ERR} role="alert">{humanFor(errors.email.message ?? '')}</p>
+          <p className="mt-1.5 text-xs text-rose-300" role="alert">
+            {humanFor(errors.email.message ?? '')}
+          </p>
         )}
       </div>
 
       <div>
-        <label className={LABEL} htmlFor="password">Password</label>
-        <input
+        <label className="mb-1.5 block text-sm font-medium text-slate-300" htmlFor="password">
+          Password
+        </label>
+        <Input
           id="password"
-          className={INPUT}
           type="password"
           autoComplete="current-password"
+          isInvalid={!!errors.password}
           {...register('password')}
         />
         {errors.password && (
-          <p className={ERR} role="alert">{humanFor(errors.password.message ?? '')}</p>
+          <p className="mt-1.5 text-xs text-rose-300" role="alert">
+            {humanFor(errors.password.message ?? '')}
+          </p>
         )}
       </div>
 
-      <button
+      <Button
         type="submit"
-        disabled={!isValid || mutation.isPending}
-        className="w-full rounded-md bg-blue-600 px-4 py-2 font-semibold text-white shadow hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={!isValid}
+        isLoading={mutation.isPending}
+        className="w-full"
       >
         {mutation.isPending ? 'Verificando…' : 'Iniciar sesión'}
-      </button>
+      </Button>
     </form>
   );
 }

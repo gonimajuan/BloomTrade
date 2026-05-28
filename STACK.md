@@ -139,6 +139,11 @@ Cada paquete de servicio (`auth/`, `trading/`, etc.) sigue internamente la estru
 | `lucide-react` | latest | Iconografía |
 | `date-fns` | 3.x | Manipulación de fechas (timezones de mercados) |
 | `vitest` + `@testing-library/react` | latest | Tests de componentes |
+| `framer-motion` | 11.x | Animaciones del revamp UI (page transitions, modal scale, stagger en grids, hover lifts con spring physics) |
+| `sonner` | 1.x | Toast system global (reemplaza `window.alert`/`window.confirm` del HU-F15 D35) |
+| `@fontsource-variable/space-grotesk` | 5.x | Tipografía self-hosted (variable font), no depende de Google Fonts CDN externo |
+| `clsx` | 2.x | Class utility para variants en componentes primitives |
+| `tailwind-merge` | 2.x | Resolver conflictos de clases Tailwind (`cn()` helper) |
 
 **Política de nuevas dependencias:** misma regla que el backend.
 
@@ -504,3 +509,4 @@ Este archivo se actualiza vía PR como cualquier código. Cada cambio significat
 | 2026-05-07 | Versión inicial | Cierre de fase de diseño, inicio de implementación SDD |
 | 2026-05-19 | §2.2: + `spring-boot-starter-mail`, `spring-boot-starter-thymeleaf`. §3.2: + `@hookform/resolvers`. | Requeridas por HU-F01: email de bienvenida vía MailHog con plantilla Thymeleaf, y resolver zod en el formulario de registro. Aprobadas por el humano. refs specs/HU-F01-registrarse/SPEC.md |
 | 2026-05-22 | §7.2 reescrita: Alpaca Market Data como proveedor único de market data en MVP. Polygon.io movido a §7.2.1 como diferido a post-MVP. | D9 D-MD-PROVIDER (`specs/HU-F09-orden-compra-market/plan.md`): reportes de degradación reciente en Polygon free tier + Alpaca paper account ya incluye market data sin creds adicionales. Reduce 1 dependencia externa y reusa creds + adapter pattern. Pre-aprobada por el humano en cuestionario de plan. refs specs/HU-F09-orden-compra-market/SPEC.md |
+| 2026-05-27 | §3.2: + `framer-motion`, `sonner`, `@fontsource-variable/space-grotesk`, `clsx`, `tailwind-merge`. | Revamp UI (post-MVP, no es HU formal): glassmorphism + violet accent + Space Grotesk + animaciones premium. `sonner` reemplaza `window.alert/confirm` del HU-F15 D35. Bundle delta ~80kb gz. Plan completo en `docs/ui-revamp/PLAN.md`. Aprobado por el humano. |
