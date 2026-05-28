@@ -137,9 +137,9 @@ Una vez levantado el stack completo, los servicios quedan accesibles en:
 
 ## Servicios externos y credenciales
 
-El sistema integra cuatro servicios externos. Para correr el MVP localmente se necesitan credenciales de **modo prueba / sandbox** de cada uno (todas gratuitas).
+El sistema integra tres servicios externos. Para correr el MVP localmente se necesitan credenciales de **modo prueba / sandbox** de cada uno (todas gratuitas).
 
-### Alpaca Markets — ejecución de órdenes
+### Alpaca Markets — ejecución de órdenes y datos de mercado
 
 1. Crear cuenta en https://alpaca.markets
 2. Ir a **Paper Trading** (no Live Trading — el MVP solo usa el sandbox)
@@ -149,25 +149,20 @@ El sistema integra cuatro servicios externos. Para correr el MVP localmente se n
    ALPACA_API_KEY=PK...
    ALPACA_API_SECRET=...
    ALPACA_BASE_URL=https://paper-api.alpaca.markets
+   ALPACA_DATA_BASE_URL=https://data.alpaca.markets
    ```
 
-### Polygon.io — datos de mercado
+### Datos de mercado — incluidos en Alpaca
 
-1. Crear cuenta en https://polygon.io
-2. En el dashboard, copiar la API Key del plan **Basic (free)**
-3. Llenar en `.env`:
-   ```
-   POLYGON_API_KEY=...
-   POLYGON_BASE_URL=https://api.polygon.io
-   ```
+El MVP obtiene los precios desde **Alpaca Market Data** (`https://data.alpaca.markets`), reutilizando las **mismas credenciales** de la cuenta paper de arriba — no requiere registro ni API key adicional. `ALPACA_DATA_BASE_URL` ya quedó configurada en el paso anterior.
 
-> ⚠️ El tier gratuito tiene límite de 5 requests/min y datos end-of-day. Para el MVP local es suficiente: el `PriceCache` en Redis amortigua y la demo no requiere precios real-time.
+> ℹ️ **Polygon.io** quedó **diferido a post-MVP** (decisión D9 D-MD-PROVIDER — ver `STACK.md` §7.2.1). El tier gratuito de Alpaca (~200 req/min, datos delayed 15 min) es suficiente para la demo, y el `PriceCache` en Redis lo amortigua.
 
 ### Stripe — suscripción premium
 
 1. Crear cuenta en https://dashboard.stripe.com
 2. Confirmar que estás en **Test mode** (toggle arriba a la derecha)
-3. En **Developers > API keys**, copiar la Secret Key (`sk_test_...`)
+3. En **Developers > API keys**, crear una **Restricted Key** (`rk_test_...`) con permisos mínimos: Checkout Sessions (write), Customers (write), Subscriptions (read), Billing Portal Sessions (write)
 4. Crear dos productos en **Products**:
    - `BloomTrade Premium - Mensual` con precio recurrente USD $12/mes
    - `BloomTrade Premium - Anual` con precio recurrente USD $120/año
@@ -179,7 +174,7 @@ El sistema integra cuatro servicios externos. Para correr el MVP localmente se n
    Esto imprime un `whsec_...` que va en `STRIPE_WEBHOOK_SECRET`
 7. Llenar en `.env`:
    ```
-   STRIPE_SECRET_KEY=sk_test_...
+   STRIPE_API_KEY=rk_test_...
    STRIPE_PRICE_MONTHLY=price_...
    STRIPE_PRICE_YEARLY=price_...
    STRIPE_WEBHOOK_SECRET=whsec_...
@@ -192,13 +187,12 @@ Para probar pagos usar las [tarjetas de prueba oficiales](https://stripe.com/doc
 1. Crear cuenta en https://www.twilio.com
 2. En el Console, copiar **Account SID** y **Auth Token** (modo Test/Trial)
 3. Solicitar un número de teléfono de prueba (gratis con créditos de trial)
-4. Para WhatsApp, activar el **WhatsApp Sandbox** en **Messaging > Try it out**
+4. (Post-MVP) Para el canal WhatsApp, activar el **WhatsApp Sandbox** en **Messaging > Try it out** y agregar el número correspondiente — el MVP solo cablea SMS/email
 5. Llenar en `.env`:
    ```
    TWILIO_ACCOUNT_SID=AC...
    TWILIO_AUTH_TOKEN=...
-   TWILIO_FROM_PHONE=+1...
-   TWILIO_FROM_WHATSAPP=whatsapp:+14155238886
+   TWILIO_FROM_NUMBER=+1...
    ```
 
 > ℹ️ Para el MVP la mayoría de notificaciones van por email vía MailHog. Twilio solo se ejercita si configuras un usuario con preferencia de canal SMS o WhatsApp.

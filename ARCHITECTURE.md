@@ -87,7 +87,7 @@ El sistema está compuesto por **9 módulos autónomos**, cada uno implementado 
 | DashboardService | Precios en tiempo real, métricas de mercado, caché de activos | `...dashboard` |
 | AdminService | Configuración de parámetros, comisiones y horarios de mercado | `...admin` |
 | AuditService | Registro inmutable de eventos y trazabilidad de operaciones | `...audit` |
-| IntegrationService | Adaptadores hacia Alpaca, Polygon.io, Stripe y Twilio | `...integration` |
+| IntegrationService | Adaptadores hacia Alpaca, Stripe y Twilio (Polygon.io diferido a post-MVP — ver `STACK.md` §7.2.1) | `...integration` |
 | MonitoringService | Health checks a dependencias externas y monitoreo del proceso | `...monitoring` |
 
 > **Nota sobre nomenclatura:** Los nombres conservan el sufijo "Service" del diseño original por continuidad con el resto de la documentación y el código. En el contexto de monolito modular debe interpretarse como **"módulo que provee servicios"** (en sentido genérico de capacidades), **no como servicio distribuido**. Esto no implica nada respecto al despliegue: todos viven dentro del mismo JAR.
@@ -138,7 +138,7 @@ El sistema está compuesto por **9 módulos autónomos**, cada uno implementado 
 
 ### MonitoringService
 
-- `HealthMonitor` — verifica periódicamente la disponibilidad de dependencias externas (Alpaca, Polygon, Stripe, Twilio, PostgreSQL, Redis, ElasticSearch) y expone métricas vía Spring Actuator
+- `HealthMonitor` — verifica periódicamente la disponibilidad de dependencias externas (Alpaca, Stripe, Twilio, PostgreSQL, Redis, ElasticSearch) y expone métricas vía Spring Actuator
 
 ---
 
@@ -189,7 +189,7 @@ ThreadPool DE TradingService     EXPONE IProcessedOrder  CONSUME OrderOrchestrat
 ```
 ElasticSearch         EXPONE ILogging              CONSUME AuditLogger DE AuditService
 Alpaca Markets        EXPONE IAlpacaAPI            CONSUME AlpacaAdapter DE IntegrationService
-Polygon.io            EXPONE IMarketDataAPI        CONSUME MarketDataAdapter DE IntegrationService
+Alpaca Market Data    EXPONE IMarketDataAPI        CONSUME MarketDataAdapter DE IntegrationService
 Stripe                EXPONE IStripeAPI            CONSUME StripeAdapter DE IntegrationService
 Twilio                EXPONE ITwilioAPI            CONSUME TwilioAdapter DE IntegrationService
 Redis                 EXPONE ICacheStore           CONSUME PriceCache DE DashboardService
@@ -305,7 +305,7 @@ El sistema se despliega con Docker Compose como una colección de contenedores e
 ┌─────────────────────────────────────────────────────────────┐
 │  APIs externas:                                             │
 │  · Alpaca Markets (paper trading)                           │
-│  · Polygon.io (market data)                                 │
+│  · Market data (vía Alpaca)                                 │
 │  · Stripe (suscripción premium, test mode)                  │
 │  · Twilio (SMS y WhatsApp, modo trial)                      │
 └─────────────────────────────────────────────────────────────┘
@@ -326,7 +326,7 @@ El sistema se despliega con Docker Compose como una colección de contenedores e
 | API | Propósito | Adaptador interno |
 |---|---|---|
 | Alpaca Markets | Ejecución de órdenes y gestión de fondos | AlpacaAdapter |
-| Polygon.io | Datos de mercado en tiempo real | MarketDataAdapter |
+| Alpaca Market Data | Datos de mercado del MVP (Polygon.io diferido a post-MVP) | MarketDataAdapter |
 | Stripe | Procesamiento de suscripción premium | StripeAdapter |
 | Twilio | Envío de SMS y WhatsApp | TwilioAdapter |
 | ElasticSearch | Almacenamiento de logs de auditoría | AuditLogger |
@@ -484,7 +484,7 @@ Los registros son inmutables. Ningún usuario, incluyendo el Administrador, pued
 |---|---|---|
 | ESC-M1 | Cambio del % de comisión desde panel admin | Activo en <5 minutos sin reiniciar el sistema |
 | ESC-M2 | Actualización de horario TSE por feriado | Activo y usuarios notificados en <5 minutos |
-| ESC-M3 | Reemplazo de Polygon.io por Alpha Vantage | Implementado en <2 días hábiles sin tocar DashboardService ni TradingService |
+| ESC-M3 | Reemplazo de Alpaca Market Data por Polygon.io | Implementado en <2 días hábiles sin tocar DashboardService ni TradingService |
 
 ### Interoperabilidad
 
@@ -536,3 +536,4 @@ Este archivo se actualiza vía PR como cualquier código. Cada cambio significat
 | 1.0 | 2026-04 | Versión inicial con estilo SOA y 9 servicios | Cierre de fase de diseño del proyecto |
 | 2.0 | 2026-05-08 | Reclasificación arquitectónica de SOA a monolito modular. Cambios principales: §2 reescrita con justificación de monolito; §3 servicios → módulos en un solo proceso JVM; §5 interfaces clarificadas como Java intra-JVM (sin red); §6 tácticas de despliegue ajustadas (warm standby diferido); §7 despliegue simplificado a un solo backend container; MonitoringService reorientado a health checks de dependencias externas. Bass: principio de simplicidad arquitectónica. | Refinamiento de clasificación para alinear con realidad de despliegue (un solo nodo según §7 original) y para hacer viable el MVP en 2 semanas con un desarrollador. |
 | 2.1 | 2026-05-08 | Agregada interfaz `IBalanceInitializer` expuesta por PortfolioService y consumida por AuthService.RegisterService. Agregado componente `BalanceInitializer` en §4 PortfolioService. Renombrado proveedor de email/SMS para incluir Twilio explícitamente. | Decisión resuelta en spec HU-F01 §14 — creación del balance inicial en flujo de registro. |
+| 2.2 | 2026-05-27 | Alineación con D9 D-MD-PROVIDER: §3 (descripción IntegrationService), §4 (HealthMonitor), §5 (dependencias externas), §7 (diagrama de despliegue) y §8 (tabla de APIs) dejan de listar Polygon.io como dependencia activa — **Alpaca Market Data es el proveedor de market data del MVP** y Polygon.io queda como alterno post-MVP. §13 ESC-M3 reformulado (swap Alpaca↔Polygon en lugar del huérfano «Alpha Vantage»). | Coherencia documental: la decisión D9 ya vivía en `STACK.md` §7.2 y en §4, pero §3/§5/§7/§8/§13 seguían tratando Polygon como activo. refs `specs/HU-F09-orden-compra-market/plan.md` |
