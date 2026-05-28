@@ -6,6 +6,10 @@ import { ALL_TICKERS } from '@/constants/tickers';
 import { usePortfolioPositions } from '@/features/portfolio/hooks/usePortfolioPositions';
 import { humanFor } from '@/lib/messages.es';
 import { TickerDropdown } from './TickerDropdown';
+import { Card } from '@/components/ui/Card';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
+import { cn } from '@/lib/cn';
 import type { OrderSide } from '@/types/api';
 
 const orderFormSchema = z.object({
@@ -25,30 +29,23 @@ const orderFormSchema = z.object({
 
 export type OrderFormValues = z.infer<typeof orderFormSchema>;
 
-const INPUT =
-  'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-blue-500 focus:outline-none disabled:opacity-50';
-const LABEL = 'block text-sm font-medium text-slate-700';
-const ERR = 'mt-1 text-xs text-red-600';
+const LABEL = 'mb-1.5 block text-sm font-medium text-slate-300';
+const ERR = 'mt-1.5 text-xs text-rose-300';
+const SELECT_CLASSES =
+  'block w-full rounded-xl border border-white/10 bg-slate-900/60 px-4 py-2.5 text-sm text-slate-100 backdrop-blur-sm transition-colors hover:border-white/20 focus:border-violet-400/50 focus:outline-none focus:ring-2 focus:ring-violet-400/50 disabled:cursor-not-allowed disabled:opacity-50';
 
 interface Props {
   onSubmit: (values: OrderFormValues) => void;
-  /** True mientras la mutación `useQuote` está pendiente. */
   isQuoting: boolean;
-  /** Error de la última cotización (si la hubo), mostrado como banner inline. */
   quoteError?: string | null;
 }
 
 /**
- * Form de captura del input para una orden Market (SPEC F09 §12.1 + F10 §12.1):
- * ticker (25 permitidos) + side (BUY o SELL, ambos habilitados desde HU-F10) +
- * cantidad (1..10000). Al hacer submit invoca {@code onSubmit(values)}; la mutación
- * de quote vive en el padre para que el panel resultante pueda mostrarse a la par.
- *
- * <p>HU-F18 Lote E (cierre deuda viva #15): cuando {@code side=SELL}, el
- * {@link TickerDropdown} se filtra por los tickers que el usuario tiene en posición
- * vía {@code usePortfolioPositions} (queryKey ya cacheado si /portfolio o /dashboard
- * estuvieron abiertos antes). El backend sigue siendo source of truth
- * ({@code SHORT_SELLING_NOT_ALLOWED} si el usuario manipula el dropdown).
+ * Form de captura de orden Market (SPEC F09 + F10). Revamp Lote E:
+ * - Card glass-elevated wrapper.
+ * - Side toggle como segmented pill control (BUY emerald glow / SELL rose glow).
+ * - Inputs vía primitives.
+ * - SELL filter de tickers preservado de HU-F18.
  */
 export function OrderForm({ onSubmit, isQuoting, quoteError }: Props) {
   const {
@@ -64,8 +61,6 @@ export function OrderForm({ onSubmit, isQuoting, quoteError }: Props) {
 
   const currentSide = watch('side');
 
-  // HU-F18 #15: solo cargamos posiciones cuando side=SELL para evitar el round-trip
-  // en BUY. React Query reusa el cache si /portfolio o /dashboard ya las trajeron.
   const positionsQuery = usePortfolioPositions();
   const ownedTickers = useMemo<ReadonlySet<string> | undefined>(() => {
     if (currentSide !== 'SELL') return undefined;
@@ -73,8 +68,10 @@ export function OrderForm({ onSubmit, isQuoting, quoteError }: Props) {
     return new Set(positionsQuery.data.positions.map((p) => p.ticker));
   }, [currentSide, positionsQuery.data]);
   const noPositionsForSell =
-    currentSide === 'SELL' && ownedTickers !== undefined && ownedTickers.size === 0
-      && !positionsQuery.isLoading;
+    currentSide === 'SELL' &&
+    ownedTickers !== undefined &&
+    ownedTickers.size === 0 &&
+    !positionsQuery.isLoading;
 
   const submitLabel = isQuoting
     ? 'Cotizando…'
@@ -83,108 +80,125 @@ export function OrderForm({ onSubmit, isQuoting, quoteError }: Props) {
       : 'Obtener quote de compra';
 
   return (
-    <form
-      onSubmit={handleSubmit(onSubmit)}
-      noValidate
-      className="space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
-    >
-      <h2 className="text-lg font-semibold text-slate-900">Nueva orden</h2>
+    <Card variant="glass-elevated" className="p-6">
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
+        <h2 className="text-lg font-semibold text-white">Nueva orden</h2>
 
-      {quoteError && (
-        <div
-          role="alert"
-          className="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700"
+        {quoteError && (
+          <div
+            role="alert"
+            className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
+          >
+            {quoteError}
+          </div>
+        )}
+
+        <div>
+          <span className={LABEL}>Tipo de operación</span>
+          <div className="grid grid-cols-2 gap-2">
+            <label
+              className={cn(
+                'flex cursor-pointer items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all',
+                currentSide === 'BUY'
+                  ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-200 shadow-glow-emerald-sm'
+                  : 'border-white/10 bg-slate-900/40 text-slate-300 hover:border-white/20',
+                isQuoting && 'cursor-not-allowed opacity-50',
+              )}
+            >
+              <input
+                type="radio"
+                value="BUY"
+                className="sr-only"
+                {...register('side')}
+                disabled={isQuoting}
+              />
+              Comprar
+            </label>
+            <label
+              className={cn(
+                'flex cursor-pointer items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all',
+                currentSide === 'SELL'
+                  ? 'border-rose-500/50 bg-rose-500/15 text-rose-200 shadow-glow-rose-sm'
+                  : 'border-white/10 bg-slate-900/40 text-slate-300 hover:border-white/20',
+                isQuoting && 'cursor-not-allowed opacity-50',
+              )}
+            >
+              <input
+                type="radio"
+                value="SELL"
+                className="sr-only"
+                {...register('side')}
+                disabled={isQuoting}
+              />
+              Vender
+            </label>
+          </div>
+          {errors.side && (
+            <p className={ERR} role="alert">
+              {humanFor(errors.side.message ?? '')}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className={LABEL} htmlFor="ticker">
+            Ticker
+          </label>
+          <TickerDropdown
+            id="ticker"
+            className={SELECT_CLASSES}
+            disabled={isQuoting || noPositionsForSell}
+            ownedTickers={ownedTickers}
+            {...register('ticker')}
+          />
+          {currentSide === 'SELL' && !noPositionsForSell && (
+            <p className="mt-1.5 text-xs text-slate-500">
+              Solo se muestran tickers que tenés en tu portafolio.
+            </p>
+          )}
+          {noPositionsForSell && (
+            <p className="mt-1.5 text-xs text-amber-300" role="alert">
+              No tenés posiciones para vender. Realizá una compra primero.
+            </p>
+          )}
+          {errors.ticker && (
+            <p className={ERR} role="alert">
+              {humanFor(errors.ticker.message ?? '')}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className={LABEL} htmlFor="quantity">
+            Cantidad
+          </label>
+          <Input
+            id="quantity"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={10000}
+            step={1}
+            disabled={isQuoting}
+            isInvalid={!!errors.quantity}
+            {...register('quantity')}
+          />
+          {errors.quantity && (
+            <p className={ERR} role="alert">
+              {humanFor(errors.quantity.message ?? '')}
+            </p>
+          )}
+        </div>
+
+        <Button
+          type="submit"
+          disabled={!isValid}
+          isLoading={isQuoting}
+          className="w-full"
         >
-          {quoteError}
-        </div>
-      )}
-
-      <div>
-        <label className={LABEL} htmlFor="ticker">
-          Ticker
-        </label>
-        <TickerDropdown
-          id="ticker"
-          className={INPUT}
-          disabled={isQuoting || noPositionsForSell}
-          ownedTickers={ownedTickers}
-          {...register('ticker')}
-        />
-        {currentSide === 'SELL' && !noPositionsForSell && (
-          <p className="mt-1 text-xs text-slate-500">
-            Solo se muestran tickers que tienes en tu portafolio.
-          </p>
-        )}
-        {noPositionsForSell && (
-          <p className="mt-1 text-xs text-amber-700" role="alert">
-            No tienes posiciones disponibles para vender. Realiza una compra primero.
-          </p>
-        )}
-        {errors.ticker && (
-          <p className={ERR} role="alert">
-            {humanFor(errors.ticker.message ?? '')}
-          </p>
-        )}
-      </div>
-
-      <div>
-        <span className={LABEL}>Tipo de operación</span>
-        <div className="mt-2 flex gap-4">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="radio"
-              value="BUY"
-              {...register('side')}
-              disabled={isQuoting}
-            />
-            Comprar
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="radio"
-              value="SELL"
-              {...register('side')}
-              disabled={isQuoting}
-            />
-            Vender
-          </label>
-        </div>
-        {errors.side && (
-          <p className={ERR} role="alert">
-            {humanFor(errors.side.message ?? '')}
-          </p>
-        )}
-      </div>
-
-      <div>
-        <label className={LABEL} htmlFor="quantity">
-          Cantidad
-        </label>
-        <input
-          id="quantity"
-          type="number"
-          inputMode="numeric"
-          min={1}
-          max={10000}
-          step={1}
-          className={INPUT}
-          disabled={isQuoting}
-          {...register('quantity')}
-        />
-        {errors.quantity && (
-          <p className={ERR} role="alert">
-            {humanFor(errors.quantity.message ?? '')}
-          </p>
-        )}
-      </div>
-
-      <button
-        type="submit"
-        disabled={!isValid || isQuoting}
-        className="w-full rounded-md bg-blue-600 px-4 py-2 font-semibold text-white shadow hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {submitLabel}
-      </button>
-    </form>
+          {submitLabel}
+        </Button>
+      </form>
+    </Card>
   );
 }

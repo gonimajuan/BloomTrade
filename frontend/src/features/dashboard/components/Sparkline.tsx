@@ -9,14 +9,13 @@ interface Props {
 
 /**
  * Mini-chart intradía 100×30px sin ejes/grid/tooltip (HU-F18 plan D11).
- * Si la serie está vacía (Alpaca bars vacíos en weekend/holiday o adapter failed),
- * renderiza "—" en gris ocupando la misma anchura para no romper el grid.
+ * Revamp Lote D: colors emerald-400/rose-400 (más visibles sobre dark glass).
  */
 export function Sparkline({ data, positive }: Props) {
   if (!data || data.length === 0) {
     return (
       <div
-        className="flex w-[100px] items-center justify-center text-sm text-slate-400"
+        className="flex w-[100px] items-center justify-center text-sm text-slate-500"
         aria-label="Sin datos intradía"
       >
         —
@@ -28,8 +27,8 @@ export function Sparkline({ data, positive }: Props) {
     positive === null
       ? 'rgb(148 163 184)' // slate-400
       : positive
-        ? 'rgb(5 150 105)' // emerald-600
-        : 'rgb(225 29 72)'; // rose-600
+        ? 'rgb(52 211 153)' // emerald-400
+        : 'rgb(251 113 133)'; // rose-400
   return (
     <LineChart width={100} height={30} data={points}>
       <Line

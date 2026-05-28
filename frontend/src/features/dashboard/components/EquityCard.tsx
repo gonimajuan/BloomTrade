@@ -1,6 +1,8 @@
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { RefreshCw, TrendingDown, TrendingUp } from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import { dashboardMessages } from '@/lib/messages.es';
 import type { AccountEquityDto } from '@/types/api';
 
@@ -22,13 +24,11 @@ interface Props {
   isFetching: boolean;
 }
 
+type PnLVariant = 'success' | 'error' | 'neutral';
+
 /**
- * Card superior del dashboard con equity total y P&L no realizado (HU-F18 plan C7).
- *
- * Render condicional:
- *  - Si `equity.equity` está poblado → muestra equity como número principal.
- *  - Si null (Alpaca caído totalmente) → muestra solo balance + texto explicativo.
- *  - Si hay P&L no realizado, lo muestra con signo + ícono + color.
+ * Card hero del dashboard con equity total + P&L no realizado (HU-F18 plan C7).
+ * Revamp Lote D: glass-elevated + número 4xl tabular-nums + Badge variant para P&L.
  */
 export function EquityCard({ equity, fetchedAt, onRefresh, isFetching }: Props) {
   const balance = Number.parseFloat(equity.balance);
@@ -40,67 +40,66 @@ export function EquityCard({ equity, fetchedAt, onRefresh, isFetching }: Props) 
   const headlineAmount = equityVal !== null ? equityVal : balance;
   const showEquityCaveat = equityVal === null;
 
-  let pnlDisplay: { text: string; colorClass: string; Icon: typeof TrendingUp | null } | null =
+  let pnlBadge: { text: string; variant: PnLVariant; Icon: typeof TrendingUp | null } | null =
     null;
   if (pnl !== null && pnlPct !== null) {
     if (pnl > 0) {
-      pnlDisplay = {
+      pnlBadge = {
         text: dashboardMessages.equity.pnlPositive(
           currencyFmt.format(Math.abs(pnl)),
           `${percentFmt.format(pnlPct)}%`,
         ),
-        colorClass: 'text-emerald-600',
+        variant: 'success',
         Icon: TrendingUp,
       };
     } else if (pnl < 0) {
-      pnlDisplay = {
+      pnlBadge = {
         text: dashboardMessages.equity.pnlNegative(
           currencyFmt.format(Math.abs(pnl)),
           `${percentFmt.format(pnlPct)}%`,
         ),
-        colorClass: 'text-rose-600',
+        variant: 'error',
         Icon: TrendingDown,
       };
     } else {
-      pnlDisplay = {
+      pnlBadge = {
         text: dashboardMessages.equity.pnlNeutral,
-        colorClass: 'text-slate-500',
+        variant: 'neutral',
         Icon: null,
       };
     }
   } else if (equity.costBasisTotal !== null && Number.parseFloat(equity.costBasisTotal) === 0) {
-    // Sin posiciones — render explícito para evitar campo en blanco.
-    pnlDisplay = {
+    pnlBadge = {
       text: dashboardMessages.equity.pnlNeutral,
-      colorClass: 'text-slate-500',
+      variant: 'neutral',
       Icon: null,
     };
   }
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
-          <h2 className="text-sm font-medium uppercase tracking-wider text-slate-500">
+    <Card variant="glass-elevated" className="p-8">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-2">
+          <h2 className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
             {dashboardMessages.equity.headline}
           </h2>
-          <p className="text-3xl font-bold text-slate-900">
+          <p className="text-4xl font-semibold tabular-nums text-white">
             {currencyFmt.format(headlineAmount)}
           </p>
           {showEquityCaveat && (
-            <p className="text-xs text-amber-700">
+            <p className="text-xs text-amber-300">
               {dashboardMessages.equity.withoutPrices(currencyFmt.format(balance))}
             </p>
           )}
-          {pnlDisplay && (
-            <p
-              className={`mt-2 flex items-center gap-1 text-sm font-medium ${pnlDisplay.colorClass}`}
-            >
-              {pnlDisplay.Icon && <pnlDisplay.Icon className="h-4 w-4" aria-hidden="true" />}
-              <span>{pnlDisplay.text}</span>
-            </p>
+          {pnlBadge && (
+            <Badge variant={pnlBadge.variant} className="mt-1">
+              {pnlBadge.Icon && (
+                <pnlBadge.Icon className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              {pnlBadge.text}
+            </Badge>
           )}
-          <p className="pt-2 text-xs text-slate-400">
+          <p className="pt-3 text-xs text-slate-500">
             Actualizado hace{' '}
             {formatDistanceToNow(new Date(fetchedAt), { locale: es, addSuffix: false })}
           </p>
@@ -109,12 +108,15 @@ export function EquityCard({ equity, fetchedAt, onRefresh, isFetching }: Props) 
           type="button"
           onClick={onRefresh}
           disabled={isFetching}
-          className="rounded-md border border-slate-200 p-2 text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
           aria-label={dashboardMessages.refreshAria}
+          className="rounded-xl border border-white/10 bg-slate-800/60 p-2 text-slate-300 backdrop-blur-sm transition-colors hover:bg-slate-700/70 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          <RefreshCw
+            className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`}
+            aria-hidden="true"
+          />
         </button>
       </div>
-    </section>
+    </Card>
   );
 }

@@ -4,39 +4,47 @@ import { CancelOrderButton } from '@/features/trading/components/CancelOrderButt
 import { formatLocalDateTime } from '@/lib/dateFormat';
 import { dashboardMessages } from '@/lib/messages.es';
 import type { OrderHistoryDto, OrderStatus } from '@/types/api';
+import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 
-const STATUS_PALETTE: Record<OrderStatus, string> = {
-  PENDING: 'bg-amber-100 text-amber-800',
-  EXECUTED: 'bg-emerald-100 text-emerald-800',
-  REJECTED: 'bg-rose-100 text-rose-800',
-  FAILED: 'bg-rose-200 text-rose-900',
-  CANCELED: 'bg-slate-200 text-slate-800', // HU-F15
-  EXPIRED: 'bg-slate-200 text-slate-700', // HU-F15
+type BadgeVariant = 'neutral' | 'success' | 'error' | 'warning' | 'accent';
+
+const STATUS_BADGE_VARIANT: Record<OrderStatus, BadgeVariant> = {
+  PENDING: 'warning',
+  EXECUTED: 'success',
+  REJECTED: 'error',
+  FAILED: 'error',
+  CANCELED: 'neutral',
+  EXPIRED: 'neutral',
 };
 
 /**
  * Widget "Últimas 10 órdenes" embebido en /dashboard (HU-F17 plan C8).
- * Sin UI de filtros (decisión MVP — filtros via curl). Empty state con CTA a /trade.
+ * Revamp Lote D: Card glass + Badge primitives para status + Button para CTA empty.
  */
 export function RecentOrdersWidget() {
   const { data, isLoading, error } = useOrdersRecent();
 
   if (isLoading) {
     return (
-      <section className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">
+      <Card variant="glass" className="p-6 text-sm text-slate-400">
         Cargando últimas órdenes…
-      </section>
+      </Card>
     );
   }
   if (error) {
     return (
-      <section className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+      <Card
+        variant="glass"
+        className="border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
+      >
         <p>No se pudieron cargar las órdenes: {error.message}</p>
-        <p className="mt-1 text-xs italic text-rose-700">
+        <p className="mt-1 text-xs italic text-rose-300/80">
           Código: {error.code}
           {error.traceId && ` · traceId: ${error.traceId}`}
         </p>
-      </section>
+      </Card>
     );
   }
   if (!data) return null;
@@ -45,21 +53,22 @@ export function RecentOrdersWidget() {
   const isEmpty = orders.length === 0;
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <Card variant="glass" className="overflow-hidden">
       <details open className="group">
-        <summary className="flex cursor-pointer items-center justify-between rounded-t-lg bg-slate-50 px-6 py-3 text-sm font-medium text-slate-700">
+        <summary className="flex cursor-pointer items-center justify-between border-b border-white/10 bg-slate-800/40 px-6 py-3 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-800/60">
           <span>{dashboardMessages.orders.title}</span>
-          <span className="text-xs text-slate-400 transition group-open:rotate-180">▾</span>
+          <span className="text-xs text-slate-400 transition-transform group-open:rotate-180">
+            ▾
+          </span>
         </summary>
         <div className="px-6 py-4">
           {isEmpty ? (
-            <div className="flex flex-col items-center gap-2 py-4 text-sm text-slate-500">
+            <div className="flex flex-col items-center gap-3 py-6 text-sm text-slate-400">
               <p>{dashboardMessages.orders.empty}</p>
-              <Link
-                to="/trade"
-                className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
-              >
-                {dashboardMessages.orders.emptyCta}
+              <Link to="/trade">
+                <Button variant="primary" size="sm">
+                  {dashboardMessages.orders.emptyCta}
+                </Button>
               </Link>
             </div>
           ) : (
@@ -67,7 +76,7 @@ export function RecentOrdersWidget() {
           )}
         </div>
       </details>
-    </section>
+    </Card>
   );
 }
 
@@ -92,39 +101,40 @@ function OrdersTable({ orders }: { orders: OrderHistoryDto[] }) {
           <th scope="col" className="pb-2 text-right">
             {h.date}
           </th>
-          {/* HU-F15: columna Acciones (condicional render por fila) */}
           <th scope="col" className="pb-2 text-right">
             {h.actions}
           </th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-100">
+      <tbody className="divide-y divide-white/5">
         {orders.map((order) => (
-          <tr key={order.orderId}>
-            <td className="py-2 font-mono font-semibold text-slate-900">{order.ticker}</td>
+          <tr key={order.orderId} className="transition-colors hover:bg-white/5">
+            <td className="py-2.5 font-mono font-semibold text-white">
+              {order.ticker}
+            </td>
             <td
               className={
                 order.side === 'BUY'
-                  ? 'py-2 font-medium text-emerald-700'
-                  : 'py-2 font-medium text-rose-700'
+                  ? 'py-2.5 font-medium text-emerald-300'
+                  : 'py-2.5 font-medium text-rose-300'
               }
             >
               {order.side === 'BUY'
                 ? dashboardMessages.orders.sideBuy
                 : dashboardMessages.orders.sideSell}
             </td>
-            <td className="py-2 text-right text-slate-700">{order.quantity}</td>
-            <td className="py-2">
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_PALETTE[order.status]}`}
-              >
-                {dashboardMessages.orders.status[order.status]}
-              </span>
+            <td className="py-2.5 text-right tabular-nums text-slate-300">
+              {order.quantity}
             </td>
-            <td className="py-2 text-right text-xs text-slate-500">
+            <td className="py-2.5">
+              <Badge variant={STATUS_BADGE_VARIANT[order.status]}>
+                {dashboardMessages.orders.status[order.status]}
+              </Badge>
+            </td>
+            <td className="py-2.5 text-right text-xs text-slate-500">
               {formatLocalDateTime(order.submittedAt)}
             </td>
-            <td className="py-2 text-right">
+            <td className="py-2.5 text-right">
               {order.status === 'PENDING' && order.alpacaOrderId && (
                 <CancelOrderButton
                   orderId={order.orderId}

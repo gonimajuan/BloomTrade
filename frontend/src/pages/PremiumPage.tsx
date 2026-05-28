@@ -1,19 +1,20 @@
 import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { Sparkles } from 'lucide-react';
 import { AppHeader } from '@/components/AppHeader';
 import { useSubscription } from '@/features/subscription/hooks/useSubscription';
 import { useStartCheckout } from '@/features/subscription/hooks/useStartCheckout';
 import { useOpenBillingPortal } from '@/features/subscription/hooks/useOpenBillingPortal';
 import { humanFor } from '@/lib/messages.es';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { cn } from '@/lib/cn';
 import type { BillingPlan, SubscriptionDto } from '@/types/api';
 
 /**
  * Página de gestión de suscripción premium (HU-F06 §12.1, v1.2).
- *
- * Orquesta 4 estados:
- *  A — sin suscripción: cards de planes (mensual/anual)
- *  B — ACTIVE sin cancel_at_period_end: banner verde + "Gestionar suscripción" (→ Portal)
- *  C — ACTIVE con cancel_at_period_end=true: banner amarillo + "Gestionar suscripción"
- *  D — CANCELLED / PAST_DUE: banner gris/rojo + cards de planes (re-suscribirse)
+ * Revamp Lote E: dark glass + Cards semánticas + Buttons primitives + plan highlighted con violet glow.
  */
 export function PremiumPage() {
   const { data, isLoading } = useSubscription();
@@ -37,12 +38,12 @@ export function PremiumPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-50">
+      <>
         <AppHeader />
-        <main className="mx-auto max-w-3xl px-6 py-10 text-slate-500">
+        <main className="mx-auto max-w-3xl px-6 py-10 text-sm text-slate-400">
           Cargando información de suscripción…
         </main>
-      </div>
+      </>
     );
   }
 
@@ -50,18 +51,29 @@ export function PremiumPage() {
   const isPremium = data?.isPremium ?? false;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <>
       <AppHeader />
       <main className="mx-auto max-w-3xl px-6 py-10">
-        <h1 className="text-2xl font-semibold text-slate-900">Mi plan</h1>
+        <motion.header
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+          className="mb-8"
+        >
+          <h1 className="text-3xl font-semibold tracking-tight text-white">Mi plan</h1>
+          <p className="mt-1.5 text-sm text-slate-400">
+            Gestiona tu suscripción y desbloquea funcionalidades premium.
+          </p>
+        </motion.header>
 
         {errorBanner && (
-          <div
+          <Card
+            variant="glass"
             role="alert"
-            className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+            className="mb-6 border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
           >
             {errorBanner}
-          </div>
+          </Card>
         )}
 
         {isPremium && subscription && !subscription.cancelAtPeriodEnd && (
@@ -91,7 +103,7 @@ export function PremiumPage() {
           />
         )}
       </main>
-    </div>
+    </>
   );
 }
 
@@ -106,21 +118,38 @@ function ActiveBanner({
 }) {
   const periodEnd = new Date(subscription.currentPeriodEnd).toLocaleDateString();
   return (
-    <section className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 p-6">
-      <h2 className="text-lg font-semibold text-emerald-900">Eres Premium 🌟</h2>
-      <p className="mt-1 text-sm text-emerald-800">
-        Plan <strong>{subscription.plan === 'MONTHLY' ? 'Mensual' : 'Anual'}</strong>. Tu próximo
-        cargo es el <strong>{periodEnd}</strong>.
-      </p>
-      <button
-        type="button"
-        onClick={onManage}
-        disabled={disabled}
-        className="mt-4 rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-40"
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+    >
+      <Card
+        variant="glass-elevated"
+        className="border-emerald-500/30 bg-emerald-500/5 p-6"
       >
-        Gestionar suscripción
-      </button>
-    </section>
+        <div className="mb-3 flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-emerald-300" aria-hidden />
+          <h2 className="text-lg font-semibold text-emerald-200">Eres usuario Premium.</h2>
+        </div>
+        <p className="text-sm text-emerald-100/80">
+          Plan{' '}
+          <strong className="text-white">
+            {subscription.plan === 'MONTHLY' ? 'Mensual' : 'Anual'}
+          </strong>
+          . Tu próximo cargo es el{' '}
+          <strong className="text-white">{periodEnd}</strong>.
+        </p>
+        <Button
+          variant="subtle"
+          size="md"
+          onClick={onManage}
+          disabled={disabled}
+          className="mt-4"
+        >
+          Gestionar suscripción
+        </Button>
+      </Card>
+    </motion.div>
   );
 }
 
@@ -135,47 +164,68 @@ function CancelScheduledBanner({
 }) {
   const periodEnd = new Date(subscription.currentPeriodEnd).toLocaleDateString();
   return (
-    <section className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-6">
-      <h2 className="text-lg font-semibold text-amber-900">
-        Tu suscripción terminará el {periodEnd}
-      </h2>
-      <p className="mt-1 text-sm text-amber-800">
-        Mantienes acceso premium hasta esa fecha. Puedes reactivar tu suscripción en cualquier
-        momento desde el portal de pagos.
-      </p>
-      <button
-        type="button"
-        onClick={onManage}
-        disabled={disabled}
-        className="mt-4 rounded-md border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+    >
+      <Card
+        variant="glass-elevated"
+        className="border-amber-500/30 bg-amber-500/5 p-6"
       >
-        Gestionar suscripción
-      </button>
-    </section>
+        <h2 className="text-lg font-semibold text-amber-200">
+          Tu suscripción terminará el {periodEnd}
+        </h2>
+        <p className="mt-1 text-sm text-amber-100/80">
+          Mantenés acceso premium hasta esa fecha. Podés reactivar tu suscripción en
+          cualquier momento desde el portal de pagos.
+        </p>
+        <Button
+          variant="subtle"
+          size="md"
+          onClick={onManage}
+          disabled={disabled}
+          className="mt-4"
+        >
+          Gestionar suscripción
+        </Button>
+      </Card>
+    </motion.div>
   );
 }
 
 function TerminalBanner({ subscription }: { subscription: SubscriptionDto }) {
   const cancelled = subscription.status === 'CANCELLED';
   return (
-    <section
-      className={`mt-6 rounded-lg border p-6 ${
-        cancelled
-          ? 'border-slate-200 bg-slate-100'
-          : 'border-red-200 bg-red-50'
-      }`}
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
     >
-      <h2
-        className={`text-lg font-semibold ${cancelled ? 'text-slate-700' : 'text-red-800'}`}
+      <Card
+        variant="glass"
+        className={cn(
+          'p-6',
+          cancelled
+            ? 'border-slate-500/30 bg-slate-700/20'
+            : 'border-rose-500/30 bg-rose-500/10',
+        )}
       >
-        {cancelled
-          ? 'Tu suscripción premium terminó'
-          : 'Tu pago falló y perdiste el acceso premium'}
-      </h2>
-      <p className="mt-1 text-sm text-slate-700">
-        Puedes re-suscribirte cuando quieras eligiendo uno de los planes a continuación.
-      </p>
-    </section>
+        <h2
+          className={cn(
+            'text-lg font-semibold',
+            cancelled ? 'text-slate-200' : 'text-rose-200',
+          )}
+        >
+          {cancelled
+            ? 'Tu suscripción premium terminó'
+            : 'Tu pago falló y perdiste el acceso premium'}
+        </h2>
+        <p className="mt-1 text-sm text-slate-300">
+          Podés re-suscribirte cuando quieras eligiendo uno de los planes a continuación.
+        </p>
+      </Card>
+    </motion.div>
   );
 }
 
@@ -188,30 +238,38 @@ function PlansSection({
 }) {
   return (
     <section className="mt-8">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-        Activa BloomTrade Premium
+      <h2 className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
+        Activá BloomTrade Premium
       </h2>
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <PlanCard
           title="Plan Mensual"
-          price="USD $12 / mes"
+          price="USD $12"
+          period="/ mes"
           ctaLabel="Activar mensual"
           onClick={() => onSelectPlan('MONTHLY')}
           disabled={disabled}
         />
         <PlanCard
           title="Plan Anual"
-          price="USD $120 / año"
-          savings="Equivalente a $10/mes — ahorra $24"
+          price="USD $120"
+          period="/ año"
+          savings="Equivalente a $10/mes — ahorrás $24"
           ctaLabel="Activar anual"
           onClick={() => onSelectPlan('YEARLY')}
           disabled={disabled}
           highlighted
         />
       </div>
-      <ul className="mt-6 list-inside list-disc text-sm text-slate-600">
-        <li>Alertas de precio personalizadas (próximamente)</li>
-        <li>Watchlist con notificaciones (próximamente)</li>
+      <ul className="mt-6 space-y-1.5 text-sm text-slate-400">
+        <li className="flex items-start gap-2">
+          <Sparkles className="mt-0.5 h-3.5 w-3.5 text-violet-400" aria-hidden />
+          Alertas de precio personalizadas (próximamente)
+        </li>
+        <li className="flex items-start gap-2">
+          <Sparkles className="mt-0.5 h-3.5 w-3.5 text-violet-400" aria-hidden />
+          Watchlist con notificaciones (próximamente)
+        </li>
       </ul>
     </section>
   );
@@ -220,6 +278,7 @@ function PlansSection({
 function PlanCard({
   title,
   price,
+  period,
   savings,
   ctaLabel,
   onClick,
@@ -228,6 +287,7 @@ function PlanCard({
 }: {
   title: string;
   price: string;
+  period: string;
   savings?: string;
   ctaLabel: string;
   onClick: () => void;
@@ -235,22 +295,34 @@ function PlanCard({
   highlighted?: boolean;
 }) {
   return (
-    <div
-      className={`rounded-lg border p-6 ${
-        highlighted ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white'
-      }`}
+    <Card
+      variant={highlighted ? 'glass-elevated' : 'glass'}
+      className={cn(
+        'relative p-6',
+        highlighted && 'border-violet-500/40 shadow-glow-violet',
+      )}
     >
-      <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-      <p className="mt-1 text-xl font-bold text-slate-900">{price}</p>
-      {savings && <p className="mt-1 text-xs text-emerald-700">{savings}</p>}
-      <button
-        type="button"
+      {highlighted && (
+        <Badge variant="accent" className="absolute -top-2 right-4">
+          Más popular
+        </Badge>
+      )}
+      <h3 className="text-base font-semibold text-white">{title}</h3>
+      <div className="mt-2 flex items-baseline gap-1.5">
+        <p className="text-3xl font-bold tabular-nums text-white">{price}</p>
+        <p className="text-sm text-slate-400">{period}</p>
+      </div>
+      {savings && <p className="mt-1 text-xs text-emerald-300">{savings}</p>}
+      <Button
+        variant={highlighted ? 'primary' : 'subtle'}
+        size="md"
         onClick={onClick}
         disabled={disabled}
-        className="mt-4 w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40"
+        isLoading={disabled}
+        className="mt-5 w-full"
       >
         {disabled ? 'Procesando…' : ctaLabel}
-      </button>
-    </div>
+      </Button>
+    </Card>
   );
 }

@@ -1,15 +1,13 @@
 import { Link } from 'react-router-dom';
 import { TrendingDown, TrendingUp } from 'lucide-react';
 import { portfolioMessages } from '@/lib/messages.es';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { cn } from '@/lib/cn';
 import type { PositionDto } from '@/types/api';
 
 interface Props {
   positions: PositionDto[];
-  /**
-   * Indica que hay un refetch en curso mientras seguimos mostrando data previa.
-   * P1-2 audit: en lugar de un spinner que oculta la tabla, dim a 60% opacity para
-   * señalar que la data puede estar stale sin perder visibilidad.
-   */
   isFetching?: boolean;
 }
 
@@ -26,8 +24,8 @@ function formatMoneyOrDash(value: string | null): string {
 function pnlClass(pnl: string | null): string {
   if (pnl === null) return 'text-slate-500';
   const n = Number(pnl);
-  if (n > 0) return 'text-emerald-600';
-  if (n < 0) return 'text-rose-600';
+  if (n > 0) return 'text-emerald-400';
+  if (n < 0) return 'text-rose-400';
   return 'text-slate-500';
 }
 
@@ -38,7 +36,7 @@ function PnLCell({ pnl, pnlPct }: { pnl: string | null; pnlPct: string | null })
   const n = Number(pnl);
   const Icon = n > 0 ? TrendingUp : n < 0 ? TrendingDown : null;
   return (
-    <span className={`inline-flex items-center gap-1 font-medium ${pnlClass(pnl)}`}>
+    <span className={`inline-flex items-center gap-1 font-medium tabular-nums ${pnlClass(pnl)}`}>
       {Icon && <Icon className="h-4 w-4" aria-hidden="true" />}
       {currencyFormatter.format(n)} ({Number(pnlPct).toFixed(2)}%)
     </span>
@@ -47,38 +45,49 @@ function PnLCell({ pnl, pnlPct }: { pnl: string | null; pnlPct: string | null })
 
 /**
  * Tabla de posiciones con P&L color-coded e icono ▲/▼ (a11y daltonismo).
- * SPEC §12.1 + plan D7. Empty state inline con CTA a /trade.
+ * Revamp Lote D: Card glass + hover white/5 + empty state con Button primary.
  */
 export function PositionsTable({ positions, isFetching = false }: Props) {
   if (positions.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center">
-        <p className="text-sm text-slate-600">{portfolioMessages.emptyState}</p>
-        <Link
-          to="/trade"
-          className="mt-4 inline-block rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
-        >
-          {portfolioMessages.emptyCta}
+      <Card variant="glass-outline" className="border-dashed p-10 text-center">
+        <p className="text-sm text-slate-300">{portfolioMessages.emptyState}</p>
+        <Link to="/trade" className="mt-4 inline-block">
+          <Button variant="primary" size="md">
+            {portfolioMessages.emptyCta}
+          </Button>
         </Link>
-      </div>
+      </Card>
     );
   }
 
   return (
-    <div
+    <Card
+      variant="glass"
       aria-busy={isFetching}
-      className={`overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition-opacity ${
-        isFetching ? 'opacity-60' : ''
-      }`}
+      className={cn(
+        'overflow-hidden transition-opacity',
+        isFetching && 'opacity-60',
+      )}
     >
-      <table className="w-full divide-y divide-slate-200 text-sm">
-        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+      <table className="w-full divide-y divide-white/10 text-sm">
+        <thead className="bg-slate-800/40 text-xs uppercase tracking-wider text-slate-400">
           <tr>
-            <th scope="col" className="px-4 py-3 text-left">Ticker</th>
-            <th scope="col" className="px-4 py-3 text-right">Cant.</th>
-            <th scope="col" className="px-4 py-3 text-right">Costo prom.</th>
-            <th scope="col" className="px-4 py-3 text-right">Actual</th>
-            <th scope="col" className="px-4 py-3 text-right">Valor</th>
+            <th scope="col" className="px-4 py-3 text-left">
+              Ticker
+            </th>
+            <th scope="col" className="px-4 py-3 text-right">
+              Cant.
+            </th>
+            <th scope="col" className="px-4 py-3 text-right">
+              Costo prom.
+            </th>
+            <th scope="col" className="px-4 py-3 text-right">
+              Actual
+            </th>
+            <th scope="col" className="px-4 py-3 text-right">
+              Valor
+            </th>
             <th
               scope="col"
               className="px-4 py-3 text-right"
@@ -88,18 +97,22 @@ export function PositionsTable({ positions, isFetching = false }: Props) {
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-white/5">
           {positions.map((p) => (
-            <tr key={p.ticker} className="hover:bg-slate-50">
-              <td className="px-4 py-3 font-semibold text-slate-900">{p.ticker}</td>
-              <td className="px-4 py-3 text-right text-slate-700">{p.quantity}</td>
-              <td className="px-4 py-3 text-right text-slate-700">
+            <tr key={p.ticker} className="transition-colors hover:bg-white/5">
+              <td className="px-4 py-3 font-mono font-semibold text-white">
+                {p.ticker}
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums text-slate-300">
+                {p.quantity}
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums text-slate-300">
                 {currencyFormatter.format(Number(p.avgCost))}
               </td>
-              <td className="px-4 py-3 text-right text-slate-700">
+              <td className="px-4 py-3 text-right tabular-nums text-slate-300">
                 {formatMoneyOrDash(p.currentPrice)}
               </td>
-              <td className="px-4 py-3 text-right text-slate-700">
+              <td className="px-4 py-3 text-right tabular-nums text-slate-300">
                 {formatMoneyOrDash(p.marketValue)}
               </td>
               <td className="px-4 py-3 text-right">
@@ -109,6 +122,6 @@ export function PositionsTable({ positions, isFetching = false }: Props) {
           ))}
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }

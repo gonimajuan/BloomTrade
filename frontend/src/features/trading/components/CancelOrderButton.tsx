@@ -1,9 +1,13 @@
+import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   buildCancelSuccessMessage,
   useCancelOrder,
 } from '@/features/trading/hooks/useCancelOrder';
 import { humanFor } from '@/lib/messages.es';
+import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
 
 /**
  * Props para {@link CancelOrderButton} — pensado para reuso desde PendingOrdersPanel
@@ -22,13 +26,12 @@ interface Props {
 }
 
 /**
- * HU-F15 — botón "Cancelar" con confirm dialog + visual feedback polling-timeout
- * (D10 + D11 SPEC). Si {@code cancelRequestedAt} está seteado, renderea disabled con label
- * "Cancelando…" + spinner. Click → window.confirm con texto side-aware → mutate.
+ * HU-F15 — botón "Cancelar" con Modal de confirmación + toast (sonner) feedback.
+ * Si {@code cancelRequestedAt} está seteado, renderea disabled con label "Cancelando…"
+ * + spinner. Click → Modal con texto side-aware → mutate → toast success/error.
  *
- * <p>Feedback éxito/error: window.alert para MVP (sin sistema toast global — registrado como
- * deuda D35 D-NO-TOAST-SYSTEM en plan.md, deferido a revamp UI). El refetch granular del
- * hook actualiza balance/positions/recentOrders en background.
+ * <p>Revamp UI Lote B (2026-05-27): reemplazado {@code window.confirm/alert} por
+ * {@link Modal} primitive + {@code sonner.toast} (cierra deuda viva #33 D35).
  */
 export function CancelOrderButton({
   orderId,
@@ -39,8 +42,8 @@ export function CancelOrderButton({
   cancelRequestedAt,
 }: Props) {
   const { mutate, isPending } = useCancelOrder();
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Visual feedback polling-timeout (D11): fila ya marcada como "Cancelando…" — disabled.
   if (cancelRequestedAt) {
     return (
       <div
@@ -59,39 +62,52 @@ export function CancelOrderButton({
         (quotedTotal ? ` Se restaurarán USD ${quotedTotal} a tu saldo.` : '')
       : `¿Cancelar tu orden de venta de ${quantity} ${ticker}? Se restaurarán ${quantity} acciones a tu posición.`;
 
-  const handleClick = () => {
-    if (!window.confirm(confirmMessage)) return;
+  const handleConfirm = () => {
+    setIsModalOpen(false);
     mutate(orderId, {
       onSuccess: (response) => {
-        // MVP: window.alert. Deuda D35: reemplazar por toast global post revamp UI.
-        window.alert(buildCancelSuccessMessage(response));
+        toast.success(buildCancelSuccessMessage(response));
       },
       onError: (error) => {
-        // ParsedError ya trae message humano via humanFor() del messages.es.ts.
         const msg =
           error.message ||
           humanFor(error.code) ||
           'No pudimos procesar tu solicitud. Intenta nuevamente.';
-        window.alert(`Error: ${msg}`);
+        toast.error(msg);
       },
     });
   };
 
   return (
-    <button
-      type="button"
-      disabled={isPending}
-      onClick={handleClick}
-      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      {isPending ? (
-        <>
-          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-          <span>Cancelando…</span>
-        </>
-      ) : (
-        'Cancelar'
-      )}
-    </button>
+    <>
+      <Button
+        variant="destructive"
+        size="sm"
+        isLoading={isPending}
+        onClick={() => setIsModalOpen(true)}
+      >
+        {isPending ? 'Cancelando…' : 'Cancelar'}
+      </Button>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title="Cancelar orden"
+        size="sm"
+      >
+        <p className="mb-6 text-sm text-slate-300">{confirmMessage}</p>
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="md"
+            onClick={() => setIsModalOpen(false)}
+          >
+            Mantener orden
+          </Button>
+          <Button variant="destructive" size="md" onClick={handleConfirm}>
+            Cancelar orden
+          </Button>
+        </div>
+      </Modal>
+    </>
   );
 }
